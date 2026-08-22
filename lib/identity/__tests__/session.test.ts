@@ -20,4 +20,19 @@ describe('session identity', () => {
   it('returns null decoding garbage input rather than throwing', () => {
     expect(decodeSession('not-valid-json')).toBeNull()
   })
+
+  it('rejects a customer session missing accountId', () => {
+    const forged = Buffer.from(JSON.stringify({ surface: 'customer' })).toString('base64url')
+    expect(decodeSession(forged)).toBeNull()
+  })
+
+  it('rejects an internal session missing role', () => {
+    const forged = Buffer.from(JSON.stringify({ surface: 'internal', staffId: 'rohit' })).toString('base64url')
+    expect(decodeSession(forged)).toBeNull()
+  })
+
+  it('rejects an internal session missing staffId', () => {
+    const forged = Buffer.from(JSON.stringify({ surface: 'internal', role: 'manager' })).toString('base64url')
+    expect(decodeSession(forged)).toBeNull()
+  })
 })

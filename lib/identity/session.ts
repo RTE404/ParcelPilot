@@ -15,12 +15,34 @@ export function encodeSession(identity: SessionIdentity): string {
   return Buffer.from(JSON.stringify(identity)).toString('base64url')
 }
 
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0
+}
+
+function isValidSessionShape(parsed: unknown): parsed is SessionIdentity {
+  if (!parsed || typeof parsed !== 'object') return false
+  const candidate = parsed as Record<string, unknown>
+
+  if (candidate.surface === 'customer') {
+    return isNonEmptyString(candidate.accountId)
+  }
+
+  if (candidate.surface === 'internal') {
+    return (
+      isNonEmptyString(candidate.staffId) &&
+      (candidate.role === 'support_agent' || candidate.role === 'manager')
+    )
+  }
+
+  return false
+}
+
 export function decodeSession(value: string | undefined | null): SessionIdentity | null {
   if (!value) return null
   try {
     const parsed = JSON.parse(Buffer.from(value, 'base64url').toString('utf8'))
-    if (parsed && typeof parsed === 'object' && (parsed.surface === 'customer' || parsed.surface === 'internal')) {
-      return parsed as SessionIdentity
+    if (isValidSessionShape(parsed)) {
+      return parsed
     }
     return null
   } catch {

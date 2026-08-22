@@ -12,8 +12,10 @@ function accountFilterFor(session: SessionIdentity, requestedAccountId?: string)
 export function getOrder(orderId: string, session: SessionIdentity): Found<Order> {
   const order = loadOrders().find(o => o.orderId === orderId)
   if (!order) return { found: false }
-  const filter = accountFilterFor(session)
-  if (filter && order.accountId !== filter) return { found: false }
+  if (session.surface === 'customer') {
+    const filter = accountFilterFor(session)
+    if (order.accountId !== filter) return { found: false }
+  }
   return { found: true, record: order }
 }
 
@@ -27,8 +29,10 @@ export function getAccount(session: SessionIdentity, requestedAccountId?: string
 export function getTicket(ticketId: string, session: SessionIdentity): Found<Ticket> {
   const ticket = loadTickets().find(t => t.ticketId === ticketId)
   if (!ticket) return { found: false }
-  const filter = accountFilterFor(session)
-  if (filter && ticket.accountId !== filter) return { found: false }
+  if (session.surface === 'customer') {
+    const filter = accountFilterFor(session)
+    if (ticket.accountId !== filter) return { found: false }
+  }
   return { found: true, record: ticket }
 }
 

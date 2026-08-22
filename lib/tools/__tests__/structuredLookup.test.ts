@@ -1,9 +1,15 @@
 import { describe, it, expect } from 'vitest'
 import { getOrder, getAccount, getTicket, listOpenTickets } from '../structuredLookup'
+import type { SessionIdentity } from '@/lib/identity/types'
 
 const northstarCustomer = { surface: 'customer' as const, accountId: 'ACCT-001' }
 const lumenworksCustomer = { surface: 'customer' as const, accountId: 'ACCT-002' }
 const internalStaff = { surface: 'internal' as const, staffId: 'rohit', role: 'support_agent' as const }
+
+// A customer session with no accountId is now rejected by decodeSession (Layer 1), so this
+// shape should never reach structuredLookup in practice. This proves the runtime guard here
+// (Layer 2) independently fails closed if some future bug ever produced one anyway.
+const brokenCustomerSession = { surface: 'customer' } as SessionIdentity
 
 describe('structuredLookup', () => {
   it('returns an order belonging to the caller\'s own account', () => {
@@ -45,5 +51,15 @@ describe('structuredLookup', () => {
     const result = listOpenTickets(internalStaff)
     const accountIds = new Set(result.map(t => t.accountId))
     expect(accountIds.size).toBeGreaterThan(1)
+  })
+
+  it('fails closed on getOrder for a customer session with a missing accountId, rather than leaking every order', () => {
+    const result = getOrder('ORD-1001', brokenCustomerSession)
+    expect(result.found).toBe(false)
+  })
+
+  it('fails closed on getTicket for a customer session with a missing accountId, rather than leaking every ticket', () => {
+    const result = getTicket('TKT-501', brokenCustomerSession)
+    expect(result.found).toBe(false)
   })
 })
