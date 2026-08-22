@@ -8,6 +8,7 @@ import { calculateSlaStatus } from '@/lib/tools/calculations/slaStatus'
 import { traceSpan } from '@/lib/observability/traceSpan'
 import { REFERENCE_NOW } from '@/lib/data/loadData'
 import type { SessionIdentity } from '@/lib/identity/types'
+import { getMonthlyCreditsForAccount } from './store/actionLog'
 
 export function createReadOnlyTools(session: SessionIdentity) {
   return {
@@ -52,7 +53,7 @@ export function createReadOnlyTools(session: SessionIdentity) {
       execute: ({ orderId }) => traceSpan('tool.calcCredit', { orderId }, async () => {
         const result = getOrder(orderId, session)
         if (!result.found) return { error: 'order not found or not accessible' }
-        return calculateServiceCredit(result.record, REFERENCE_NOW, 0)
+        return calculateServiceCredit(result.record, REFERENCE_NOW, getMonthlyCreditsForAccount(result.record.accountId))
       }),
     }),
     calculateSlaStatus: tool({
