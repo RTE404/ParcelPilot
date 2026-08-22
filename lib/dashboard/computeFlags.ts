@@ -46,7 +46,7 @@ export function computeDashboardFlags(): DashboardFlags {
     .map(t => {
       // TKT-450: historical resolution claimed a ₹250 fee applied; Northstar's contract waives fees entirely.
       if (t.ticketId === 'TKT-450') {
-        const order = orders.find(o => o.accountId === t.accountId) // representative order for this account
+        const order = orders.find(o => o.accountId === t.accountId && o.status === 'BOOKED') // representative BOOKED order for this account (TKT-450's resolution was specifically about a BOOKED shipment)
         const current = order ? calculateCancellationEligibility(order) : null
         const disagrees = current?.feeWaived === true && /250/.test(t.historicalResolution ?? '')
         return { ticketId: t.ticketId, reviewRecommended: disagrees, discrepancy: disagrees ? 'historical resolution charged a fee; current contract waives it entirely' : null }
