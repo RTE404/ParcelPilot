@@ -1,0 +1,38 @@
+[
+  {
+    "accountId": "ACCT-001",
+    "accountName": "Northstar Logistics",
+    "plan": "Enterprise",
+    "status": "active",
+    "csm": "Priya Mehta",
+    "contractFile": "05_Northstar_Logistics_Enterprise_Agreement.pdf",
+    "premiumSupport": true
+  },
+  {
+    "accountId": "ACCT-002",
+    "accountName": "LumenWorks",
+    "plan": "Growth",
+    "status": "active",
+    "csm": "Arjun Rao",
+    "contractFile": "06_LumenWorks_Service_Agreement.pdf",
+    "premiumSupport": false
+  },
+  {
+    "accountId": "ACCT-003",
+    "accountName": "Beacon Retail",
+    "plan": "Standard",
+    "status": "active",
+    "csm": "Neha Kapoor",
+    "contractFile": null,
+    "premiumSupport": false
+  },
+  {
+    "accountId": "ACCT-004",
+    "accountName": "Axis Labs",
+    "plan": "Enterprise",
+    "status": "active",
+    "csm": "Priya Mehta",
+    "contractFile": null,
+    "premiumSupport": false
+  }
+]

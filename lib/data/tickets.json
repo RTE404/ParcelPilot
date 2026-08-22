@@ -1,0 +1,86 @@
+[
+  {
+    "ticketId": "TKT-501",
+    "accountId": "ACCT-001",
+    "createdAt": "2026-08-16T10:30:00+05:30",
+    "status": "open",
+    "subject": "All shipment creation is failing",
+    "description": "Every user at Northstar gets HTTP 500 when creating any shipment. Existing shipments can still be viewed.",
+    "channel": "email",
+    "assignedTo": "Rohit",
+    "lastCustomerMessageAt": "2026-08-16T10:52:00+05:30",
+    "historicalResolution": null
+  },
+  {
+    "ticketId": "TKT-502",
+    "accountId": "ACCT-002",
+    "createdAt": "2026-08-16T09:45:00+05:30",
+    "status": "open",
+    "subject": "Bulk upload fails for 4,200-row CSV",
+    "description": "The CSV reaches roughly 70% and fails. Creating shipments one-by-one still works.",
+    "channel": "chat",
+    "assignedTo": "Maya",
+    "lastCustomerMessageAt": "2026-08-16T10:40:00+05:30",
+    "historicalResolution": null
+  },
+  {
+    "ticketId": "TKT-503",
+    "accountId": "ACCT-003",
+    "createdAt": "2026-08-16T10:05:00+05:30",
+    "status": "open",
+    "subject": "How do we change the billing contact?",
+    "description": "Customer wants to replace the billing-contact email on their account.",
+    "channel": "email",
+    "assignedTo": "Rohit",
+    "lastCustomerMessageAt": "2026-08-16T10:05:00+05:30",
+    "historicalResolution": null
+  },
+  {
+    "ticketId": "TKT-504",
+    "accountId": "ACCT-001",
+    "createdAt": "2026-08-16T10:50:00+05:30",
+    "status": "open",
+    "subject": "SwiftShip order still shows BOOKED after driver pickup",
+    "description": "Driver collected the parcel around 10 minutes ago, but ParcelPilot still shows BOOKED.",
+    "channel": "chat",
+    "assignedTo": "Maya",
+    "lastCustomerMessageAt": "2026-08-16T10:58:00+05:30",
+    "historicalResolution": null
+  },
+  {
+    "ticketId": "TKT-505",
+    "accountId": "ACCT-004",
+    "createdAt": "2026-08-16T08:30:00+05:30",
+    "status": "open",
+    "subject": "Possible API key exposure",
+    "description": "An employee accidentally posted a screenshot containing a production API key in a public channel. They are asking what to do.",
+    "channel": "email",
+    "assignedTo": "Rohit",
+    "lastCustomerMessageAt": "2026-08-16T09:10:00+05:30",
+    "historicalResolution": null
+  },
+  {
+    "ticketId": "TKT-450",
+    "accountId": "ACCT-001",
+    "createdAt": "2026-07-12T14:10:00+05:30",
+    "status": "closed",
+    "subject": "Cancellation fee after 30 minutes",
+    "description": "Northstar asked whether a BOOKED shipment could be cancelled 90 minutes after booking before pickup.",
+    "channel": "email",
+    "assignedTo": "Maya",
+    "lastCustomerMessageAt": "2026-07-12T15:00:00+05:30",
+    "historicalResolution": "Agent told customer a INR 250 cancellation fee applied after 30 minutes."
+  },
+  {
+    "ticketId": "TKT-451",
+    "accountId": "ACCT-002",
+    "createdAt": "2026-08-11T11:20:00+05:30",
+    "status": "closed",
+    "subject": "Bulk upload fails for large CSV",
+    "description": "LumenWorks reported failures when uploading 3,500-row CSV files.",
+    "channel": "chat",
+    "assignedTo": "Rohit",
+    "lastCustomerMessageAt": "2026-08-11T12:10:00+05:30",
+    "historicalResolution": "Agent told customer Growth plan only supports 3,000 rows."
+  }
+]
