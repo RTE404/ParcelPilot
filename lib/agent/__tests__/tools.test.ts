@@ -6,7 +6,7 @@ describe('createReadOnlyTools', () => {
     const tools = createReadOnlyTools({ surface: 'customer', accountId: 'ACCT-001' })
     expect(Object.keys(tools).sort()).toEqual([
       'calculateCancellationEligibility', 'calculateServiceCredit', 'calculateSlaStatus',
-      'getAccount', 'getOrder', 'getTicket', 'listOpenTickets', 'searchDocuments',
+      'getAccount', 'getOrder', 'getTicket', 'listOpenTickets', 'listOrdersForAccount', 'searchDocuments',
     ])
   })
 

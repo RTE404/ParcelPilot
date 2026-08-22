@@ -1,7 +1,7 @@
 import { tool } from 'ai'
 import { z } from 'zod'
 import { searchDocuments } from '@/lib/tools/documentSearch'
-import { getOrder, getAccount, getTicket, listOpenTickets } from '@/lib/tools/structuredLookup'
+import { getOrder, getAccount, getTicket, listOpenTickets, listOrdersForAccount } from '@/lib/tools/structuredLookup'
 import { calculateCancellationEligibility } from '@/lib/tools/calculations/cancellationEligibility'
 import { calculateServiceCredit } from '@/lib/tools/calculations/serviceCredit'
 import { calculateSlaStatus } from '@/lib/tools/calculations/slaStatus'
@@ -37,6 +37,11 @@ export function createReadOnlyTools(session: SessionIdentity) {
       description: 'List currently open tickets, scoped to the caller\'s access.',
       inputSchema: z.object({}),
       execute: () => traceSpan('tool.listOpenTickets', {}, async () => listOpenTickets(session)),
+    }),
+    listOrdersForAccount: tool({
+      description: 'List orders for an account, scoped to the caller\'s access. Internal sessions may pass accountId to scope to one account, or omit it to see all accounts.',
+      inputSchema: z.object({ accountId: z.string().optional() }),
+      execute: ({ accountId }) => traceSpan('tool.listOrdersForAccount', { accountId }, async () => listOrdersForAccount(session, accountId)),
     }),
     calculateCancellationEligibility: tool({
       description: 'Determine whether an order can be cancelled and whether a fee applies, applying any contract override.',

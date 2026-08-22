@@ -41,3 +41,14 @@ export function listOpenTickets(session: SessionIdentity): Ticket[] {
   if (session.surface === 'customer') return open.filter(t => t.accountId === session.accountId)
   return open
 }
+
+export function listOrdersForAccount(session: SessionIdentity, requestedAccountId?: string): Order[] {
+  const all = loadOrders()
+  if (session.surface === 'customer') {
+    // Customer can only see their own account's orders; fail closed if accountId is missing
+    return all.filter(o => o.accountId === session.accountId)
+  }
+  // Internal session: filter by requestedAccountId if provided, else return all
+  if (requestedAccountId === undefined) return all
+  return all.filter(o => o.accountId === requestedAccountId)
+}

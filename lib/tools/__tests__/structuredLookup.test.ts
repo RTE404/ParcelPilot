@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { getOrder, getAccount, getTicket, listOpenTickets } from '../structuredLookup'
+import { getOrder, getAccount, getTicket, listOpenTickets, listOrdersForAccount } from '../structuredLookup'
 import { decodeSession } from '@/lib/identity/session'
 import type { SessionIdentity } from '@/lib/identity/types'
 
@@ -81,5 +81,28 @@ describe('structuredLookup', () => {
 
     const ticketResult = getTicket('TKT-501', incompleteSession)
     expect(ticketResult.found).toBe(false)
+  })
+
+  it('restricts listOrdersForAccount to the caller\'s account for a customer session, ignoring requestedAccountId override', () => {
+    const result = listOrdersForAccount(northstarCustomer, 'ACCT-002')
+    expect(result.every(o => o.accountId === 'ACCT-001')).toBe(true)
+    expect(result.length).toBeGreaterThan(0)
+  })
+
+  it('allows listOrdersForAccount across all accounts for an internal session with no requestedAccountId', () => {
+    const result = listOrdersForAccount(internalStaff)
+    const accountIds = new Set(result.map(o => o.accountId))
+    expect(accountIds.size).toBeGreaterThan(1)
+  })
+
+  it('scopes listOrdersForAccount to a specific account for an internal session with requestedAccountId', () => {
+    const result = listOrdersForAccount(internalStaff, 'ACCT-002')
+    expect(result.every(o => o.accountId === 'ACCT-002')).toBe(true)
+    expect(result.length).toBeGreaterThan(0)
+  })
+
+  it('fails closed on listOrdersForAccount for a customer session with a missing accountId, rather than leaking every order', () => {
+    const result = listOrdersForAccount(brokenCustomerSession)
+    expect(result).toEqual([])
   })
 })
