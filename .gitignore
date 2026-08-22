@@ -1,0 +1,20 @@
+# This repo's own future app build artifacts / deps
+node_modules/
+.next/
+out/
+dist/
+build/
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.log
+
+# Not part of this repo — the user's separate, independently-versioned
+# Evalessensia observability project, referenced locally for the demo only.
+Observability Module/
