@@ -318,6 +318,8 @@ function classifySeverity(ticket):
 
 ## 7. Confirmation Flow — State Machine
 
+> **Implementation note (added during plan-writing):** the Vercel AI SDK (v6) provides a native tool-approval mechanism — `needsApproval` on a tool definition and `addToolApprovalResponse`/`sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses` on the client `useChat` hook — that implements exactly this propose/confirm/re-check flow without a hand-rolled `PendingAction` store. The action tools (§4.3) are implemented with `needsApproval: true`; the state transitions below describe the conceptual flow, which the SDK's `approval-requested` / approved / denied states map onto directly. The role/amount re-check still happens inside each tool's `execute` function, which the SDK only calls after approval — satisfying "re-validate at confirm time, not propose time" without custom state tracking.
+
 ```
         propose_action()
               |
