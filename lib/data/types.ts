@@ -39,3 +39,31 @@ export interface Ticket {
   lastCustomerMessageAt: string
   historicalResolution: string | null
 }
+
+export type DocStatus = 'current' | 'deprecated'
+export type DocType = 'policy' | 'sop' | 'product_guide' | 'contract'
+export type Severity = 'P1' | 'P2' | 'P3'
+
+export interface DocumentChunk {
+  chunkId: string
+  docId: string
+  docName: string
+  status: DocStatus
+  docType: DocType
+  accountScope: string | null
+  sectionTitle: string
+  text: string
+}
+
+export interface ContractRule {
+  accountId: string
+  sourceDoc: string
+  sourceSection: string
+  slaOverrides: Record<Severity, string> | null
+  cancellationFeeWaived: boolean
+  cancellationFeeGraceMinutes: number | null
+  cancellationFeeAmountInr: number | null
+  creditDelayThresholdHours: number | null
+  creditAmountInr: number | null
+  creditMonthlyCapInr: number | null
+}
