@@ -40,6 +40,20 @@ describe('runSelfCheck', () => {
     expect(result.pass).toBe(false)
   })
 
+  it('parses correctly when the model wraps its JSON in a markdown code fence', async () => {
+    const model = stubModel('```json\n{"pass": true, "issues": []}\n```')
+    const result = await runSelfCheck('No fee — per Northstar\'s contract.', [{ feeWaived: true }], model)
+    expect(result.pass).toBe(true)
+    expect(result.issues).toEqual([])
+  })
+
+  it('parses correctly when a fenced response reports a real failure', async () => {
+    const model = stubModel('```json\n{\n  "pass": false,\n  "issues": ["not grounded"]\n}\n```')
+    const result = await runSelfCheck('Credit is ₹9,999.', [{ creditInr: 240 }], model)
+    expect(result.pass).toBe(false)
+    expect(result.issues).toContain('not grounded')
+  })
+
   it('fails closed (does not throw) if the self-check model call itself throws', async () => {
     const model = {
       specificationVersion: 'v2',

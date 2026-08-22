@@ -22,10 +22,18 @@ Check two things:
 
 Respond with ONLY a JSON object: {"pass": boolean, "issues": string[]}. If everything checks out, return {"pass": true, "issues": []}.`
 
+// Some models (observed: gemini-3.5-flash-lite) wrap JSON output in a markdown code fence
+// despite being asked for "ONLY a JSON object" — strip it before parsing, don't fail closed
+// on formatting the prompt already asked the model not to use.
+function stripCodeFence(text: string): string {
+  const match = text.trim().match(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/)
+  return match ? match[1] : text
+}
+
 export async function runSelfCheck(draftAnswer: string, toolResultsThisTurn: unknown[], model: LanguageModel): Promise<SelfCheckResult> {
   try {
     const { text } = await generateText({ model, prompt: SELF_CHECK_PROMPT(draftAnswer, toolResultsThisTurn) })
-    const parsed = JSON.parse(text)
+    const parsed = JSON.parse(stripCodeFence(text))
     if (typeof parsed.pass === 'boolean' && Array.isArray(parsed.issues)) {
       return { pass: parsed.pass, issues: parsed.issues }
     }

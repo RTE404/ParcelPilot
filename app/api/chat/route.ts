@@ -10,7 +10,7 @@ import { runSelfCheckStream } from '@/lib/agent/selfCheckStream'
 
 export const maxDuration = 30
 
-const MODEL_ID = process.env.PARCELPILOT_MODEL_ID ?? 'gemini-2.5-flash-lite'
+const MODEL_ID = process.env.PARCELPILOT_MODEL_ID ?? 'gemini-3.5-flash-lite'
 
 export async function POST(req: Request) {
   const session = await getSessionIdentity()
