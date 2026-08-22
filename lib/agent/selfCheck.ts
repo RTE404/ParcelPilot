@@ -23,14 +23,17 @@ Check two things:
 Respond with ONLY a JSON object: {"pass": boolean, "issues": string[]}. If everything checks out, return {"pass": true, "issues": []}.`
 
 export async function runSelfCheck(draftAnswer: string, toolResultsThisTurn: unknown[], model: LanguageModel): Promise<SelfCheckResult> {
-  const { text } = await generateText({ model, prompt: SELF_CHECK_PROMPT(draftAnswer, toolResultsThisTurn) })
   try {
+    const { text } = await generateText({ model, prompt: SELF_CHECK_PROMPT(draftAnswer, toolResultsThisTurn) })
     const parsed = JSON.parse(text)
     if (typeof parsed.pass === 'boolean' && Array.isArray(parsed.issues)) {
       return { pass: parsed.pass, issues: parsed.issues }
     }
     return { pass: false, issues: ['self-check response was not in the expected shape'] }
-  } catch {
-    return { pass: false, issues: ['self-check response was not valid JSON'] }
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      return { pass: false, issues: ['self-check response was not valid JSON'] }
+    }
+    return { pass: false, issues: ['self-check model call failed'] }
   }
 }

@@ -39,4 +39,19 @@ describe('runSelfCheck', () => {
     const result = await runSelfCheck('Some answer.', [], model)
     expect(result.pass).toBe(false)
   })
+
+  it('fails closed (does not throw) if the self-check model call itself throws', async () => {
+    const model = {
+      specificationVersion: 'v2',
+      provider: 'stub',
+      modelId: 'stub-model',
+      supportedUrls: {},
+      async doGenerate() {
+        throw new Error('network error')
+      },
+    } as unknown as LanguageModel
+    const result = await runSelfCheck('Some answer.', [], model)
+    expect(result.pass).toBe(false)
+    expect(result.issues.length).toBeGreaterThan(0)
+  })
 })
