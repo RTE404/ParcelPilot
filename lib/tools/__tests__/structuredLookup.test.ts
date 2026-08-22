@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { getOrder, getAccount, getTicket, listOpenTickets } from '../structuredLookup'
+import { decodeSession } from '@/lib/identity/session'
 import type { SessionIdentity } from '@/lib/identity/types'
 
 const northstarCustomer = { surface: 'customer' as const, accountId: 'ACCT-001' }
@@ -61,5 +62,24 @@ describe('structuredLookup', () => {
   it('fails closed on getTicket for a customer session with a missing accountId, rather than leaking every ticket', () => {
     const result = getTicket('TKT-501', brokenCustomerSession)
     expect(result.found).toBe(false)
+  })
+
+  it('blocks the reported exploit: a forged cookie missing accountId never yields real order/ticket data', () => {
+    // Layer 1: Forge a cookie the way an attacker would, missing accountId
+    const forgedCookie = Buffer.from(JSON.stringify({ surface: 'customer' })).toString('base64url')
+
+    // Layer 1 defense: decodeSession must reject it
+    const decodedSession = decodeSession(forgedCookie)
+    expect(decodedSession).toBeNull()
+
+    // Layer 2 defense: Even if Layer 1 somehow failed and an incomplete session reached
+    // getOrder/getTicket, they must still fail closed independently
+    const incompleteSession = { surface: 'customer' } as SessionIdentity
+
+    const orderResult = getOrder('ORD-1001', incompleteSession)
+    expect(orderResult.found).toBe(false)
+
+    const ticketResult = getTicket('TKT-501', incompleteSession)
+    expect(ticketResult.found).toBe(false)
   })
 })
