@@ -1,4 +1,4 @@
-import { tool } from 'ai'
+import { tool, type ToolSet } from 'ai'
 import { z } from 'zod'
 import type { SessionIdentity } from '@/lib/identity/types'
 import { getOrder } from '@/lib/tools/structuredLookup'
@@ -7,7 +7,7 @@ import { traceSpan } from '@/lib/observability/traceSpan'
 
 const APPROVAL_THRESHOLD_INR = 1000
 
-export function createActionTools(session: SessionIdentity) {
+export function createActionTools(session: SessionIdentity): ToolSet {
   const createEscalation = tool({
     description: 'Create a support escalation for a ticket. Requires explicit user confirmation before executing.',
     inputSchema: z.object({
