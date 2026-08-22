@@ -30,6 +30,7 @@ Internal portal: Rohit (Support Agent), Priya Mehta (Manager — also sees the d
 
 ## Deployment
 
-Deployed on Vercel (Hobby/free tier). Set `GOOGLE_GENERATIVE_AI_API_KEY` as a Vercel
-environment variable. `EVAL_ENDPOINT`/`EVAL_API_KEY` are optional and intentionally left unset
-in production — see docs/HLD.md §7/§10 for why.
+To deploy on Vercel (Hobby/free tier): connect this repo in the Vercel dashboard (or run
+`npx vercel --prod`), and set `GOOGLE_GENERATIVE_AI_API_KEY` as a Vercel environment variable.
+`EVAL_ENDPOINT`/`EVAL_API_KEY` are optional and should be left unset in production — see
+docs/HLD.md §7/§10 for why.
