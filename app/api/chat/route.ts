@@ -1,5 +1,5 @@
 import { google } from '@ai-sdk/google'
-import { streamText, generateText, convertToModelMessages, stepCountIs, createUIMessageStream, createUIMessageStreamResponse } from 'ai'
+import { streamText, generateText, convertToModelMessages, stepCountIs, createUIMessageStream, createUIMessageStreamResponse, validateUIMessages } from 'ai'
 import type { UIMessage } from 'ai'
 import { getSessionIdentity } from '@/lib/identity/session'
 import { createReadOnlyTools } from '@/lib/agent/tools'
@@ -18,14 +18,21 @@ export async function POST(req: Request) {
     return new Response('Not logged in', { status: 401 })
   }
 
-  const { messages }: { messages: UIMessage[] } = await req.json()
+  let messages: UIMessage[]
+  try {
+    const body = await req.json()
+    messages = await validateUIMessages({ messages: body.messages })
+  } catch {
+    return new Response('Invalid request body', { status: 400 })
+  }
 
   const result = streamText({
     model: google(MODEL_ID),
     system: SYSTEM_PROMPT,
-    messages: await convertToModelMessages(messages),
+    messages: await convertToModelMessages(messages, { ignoreIncompleteToolCalls: true }),
     tools: { ...createReadOnlyTools(session), ...createActionTools(session) },
     stopWhen: stepCountIs(8),
+    experimental_toolApprovalSecret: process.env.TOOL_APPROVAL_SECRET ?? 'parcelpilot-dev-secret-change-in-production',
   })
 
   const stream = createUIMessageStream({

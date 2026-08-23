@@ -43,6 +43,11 @@ function jsonRequest(body: unknown) {
   return new Request('http://localhost/api/chat', { method: 'POST', body: JSON.stringify(body) })
 }
 
+// `validateUIMessages` (added for I3) rejects an empty `messages` array ("Messages array must
+// not be empty"), so wiring tests that need to reach `streamText` can no longer use `[]` as
+// filler — use this minimal valid history instead.
+const MINIMAL_VALID_MESSAGES = [{ id: 'msg-1', role: 'user', parts: [{ type: 'text', text: 'hello' }] }]
+
 describe('POST /api/chat', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -51,7 +56,7 @@ describe('POST /api/chat', () => {
   it('returns 401 and never touches the model when there is no session', async () => {
     vi.mocked(getSessionIdentity).mockResolvedValue(null)
 
-    const res = await POST(jsonRequest({ messages: [] }))
+    const res = await POST(jsonRequest({ messages: MINIMAL_VALID_MESSAGES }))
 
     expect(res.status).toBe(401)
     expect(streamTextMock).not.toHaveBeenCalled()
@@ -67,7 +72,7 @@ describe('POST /api/chat', () => {
     createUIMessageStreamMock.mockImplementation(({ execute }: { execute: (o: { writer: unknown }) => Promise<void> }) => ({ execute }))
     createUIMessageStreamResponseMock.mockReturnValue(new Response(null, { status: 200 }))
 
-    await POST(jsonRequest({ messages: [] }))
+    await POST(jsonRequest({ messages: MINIMAL_VALID_MESSAGES }))
 
     expect(streamTextMock).toHaveBeenCalledTimes(1)
     expect(streamTextMock.mock.calls[0][0]).toMatchObject({
@@ -99,7 +104,7 @@ describe('POST /api/chat', () => {
     createUIMessageStreamResponseMock.mockReturnValue(new Response(null, { status: 200 }))
     vi.mocked(runSelfCheck).mockResolvedValue({ pass: true, issues: [] })
 
-    await POST(jsonRequest({ messages: [] }))
+    await POST(jsonRequest({ messages: MINIMAL_VALID_MESSAGES }))
     const { execute } = createUIMessageStreamMock.mock.calls[0][0]
     await execute({ writer: { write: vi.fn() } })
 
@@ -117,7 +122,7 @@ describe('POST /api/chat', () => {
     createUIMessageStreamResponseMock.mockReturnValue(new Response(null, { status: 200 }))
     generateTextMock.mockResolvedValue({ text: 'revised answer text' })
 
-    await POST(jsonRequest({ messages: [] }))
+    await POST(jsonRequest({ messages: MINIMAL_VALID_MESSAGES }))
     const { execute } = createUIMessageStreamMock.mock.calls[0][0]
     await execute({ writer: { write: vi.fn() } })
 
@@ -136,5 +141,97 @@ describe('POST /api/chat', () => {
         JSON.stringify([{ creditInr: 240 }], null, 2) +
         '\n\nReturn only the revised answer text, nothing else.',
     )
+  })
+
+  // C1: an unanswered tool-approval-request part must not permanently brick the thread.
+  // Without `{ ignoreIncompleteToolCalls: true }`, an assistant message containing an
+  // unresolved tool call (no matching tool-result / approval-response) survives
+  // `convertToModelMessages` and later trips `MissingToolResultsError` deeper inside
+  // `streamText`'s own prompt-standardization step once a later user message follows it — a
+  // real network call, not something this mocked-streamText test can observe directly. What
+  // this test CAN observe (and does) is the fix's actual effect one layer up: with the option
+  // set, `convertToModelMessages` (the real implementation — it's not one of the mocked
+  // exports from 'ai' in this file) drops the entire assistant message carrying the unanswered
+  // approval-requested part, so it never reaches `streamText` at all. Confirmed by traced SDK
+  // source in the report.
+  it('drops an assistant message that only contains an unanswered approval-request part before it reaches streamText', async () => {
+    vi.mocked(getSessionIdentity).mockResolvedValue({ surface: 'customer', accountId: 'ACCT-001' })
+    streamTextMock.mockReturnValue({ toUIMessageStream: () => (async function* () {})() })
+    createUIMessageStreamMock.mockImplementation(({ execute }: { execute: (o: { writer: unknown }) => Promise<void> }) => ({ execute }))
+    createUIMessageStreamResponseMock.mockReturnValue(new Response(null, { status: 200 }))
+
+    const historyWithUnansweredApproval = [
+      {
+        id: 'msg-1',
+        role: 'assistant',
+        parts: [
+          {
+            type: 'tool-createEscalation',
+            state: 'approval-requested',
+            toolCallId: 'call-1',
+            input: { reason: 'test' },
+            approval: { id: 'approval-1' },
+          },
+        ],
+      },
+      {
+        id: 'msg-2',
+        role: 'user',
+        parts: [{ type: 'text', text: 'never mind, something else' }],
+      },
+    ]
+
+    await POST(jsonRequest({ messages: historyWithUnansweredApproval }))
+
+    expect(streamTextMock).toHaveBeenCalledTimes(1)
+    const streamTextArgs = streamTextMock.mock.calls[0][0]
+    // Only the trailing user text message should survive — the assistant message whose only
+    // part was the unanswered approval request is gone, and no tool-call/tool-approval-request
+    // content reaches the model.
+    expect(streamTextArgs.messages).toEqual([{ role: 'user', content: [{ type: 'text', text: 'never mind, something else' }] }])
+  })
+
+  // I2: the server must sign tool-approval-request chunks so a forged request body can't
+  // fabricate an approval and get an action tool to execute without a human round-trip.
+  it('passes a non-empty experimental_toolApprovalSecret to streamText', async () => {
+    vi.mocked(getSessionIdentity).mockResolvedValue({ surface: 'customer', accountId: 'ACCT-001' })
+    streamTextMock.mockReturnValue({ toUIMessageStream: () => (async function* () {})() })
+    createUIMessageStreamMock.mockImplementation(({ execute }: { execute: (o: { writer: unknown }) => Promise<void> }) => ({ execute }))
+    createUIMessageStreamResponseMock.mockReturnValue(new Response(null, { status: 200 }))
+
+    await POST(jsonRequest({ messages: MINIMAL_VALID_MESSAGES }))
+
+    expect(streamTextMock).toHaveBeenCalledTimes(1)
+    const streamTextArgs = streamTextMock.mock.calls[0][0]
+    expect(typeof streamTextArgs.experimental_toolApprovalSecret).toBe('string')
+    expect(streamTextArgs.experimental_toolApprovalSecret.length).toBeGreaterThan(0)
+  })
+
+  // I3: a malformed body must return a clean 400, never 500, and must never reach streamText.
+  it('returns 400 (not 500) and never calls streamText when the body has no messages array', async () => {
+    vi.mocked(getSessionIdentity).mockResolvedValue({ surface: 'customer', accountId: 'ACCT-001' })
+
+    const res = await POST(jsonRequest({}))
+
+    expect(res.status).toBe(400)
+    expect(streamTextMock).not.toHaveBeenCalled()
+  })
+
+  it('returns 400 (not 500) when messages is not an array', async () => {
+    vi.mocked(getSessionIdentity).mockResolvedValue({ surface: 'customer', accountId: 'ACCT-001' })
+
+    const res = await POST(jsonRequest({ messages: 'not-an-array' }))
+
+    expect(res.status).toBe(400)
+    expect(streamTextMock).not.toHaveBeenCalled()
+  })
+
+  it('returns 400 (not 500) when the request body is not valid JSON', async () => {
+    vi.mocked(getSessionIdentity).mockResolvedValue({ surface: 'customer', accountId: 'ACCT-001' })
+
+    const res = await POST(new Request('http://localhost/api/chat', { method: 'POST', body: '{not json' }))
+
+    expect(res.status).toBe(400)
+    expect(streamTextMock).not.toHaveBeenCalled()
   })
 })
