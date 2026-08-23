@@ -7,7 +7,8 @@ categories, and a statically-parsed dataset.
 
 See [`docs/HLD.md`](docs/HLD.md) and [`docs/LLD.md`](docs/LLD.md) for architecture and design
 detail, and [`docs/superpowers/specs/2026-08-22-parcelpilot-agent-design.md`](docs/superpowers/specs/2026-08-22-parcelpilot-agent-design.md)
-for the full design rationale.
+for the full design rationale. [`docs/SUBMISSION_NOTES.md`](docs/SUBMISSION_NOTES.md) has the
+assessment's required Architecture Note, Product Note, and AI Tool Usage write-ups.
 
 ## Setup
 
