@@ -26,6 +26,21 @@ describe('computeDashboardFlags', () => {
     expect(flag?.severity).toBe('P1')
   })
 
+  it('flags TKT-505 (Axis Labs) as a security incident, distinct from the general SLA list', () => {
+    const { securityFlags } = computeDashboardFlags()
+    const flag = securityFlags.find(f => f.ticketId === 'TKT-505')
+    expect(flag).toBeDefined()
+    expect(flag?.severity).toBe('P1')
+  })
+
+  it('does not flag TKT-501 (a general-outage P1, not a security one) as a security incident', () => {
+    // TKT-501 ("All shipment creation is failing") is P1 via GENERAL_OUTAGE_P1_KEYWORDS, not the
+    // security-specific keyword set — proves the split is real, not just "every P1 ticket".
+    const { securityFlags, slaFlags } = computeDashboardFlags()
+    expect(slaFlags.find(f => f.ticketId === 'TKT-501')?.severity).toBe('P1')
+    expect(securityFlags.find(f => f.ticketId === 'TKT-501')).toBeUndefined()
+  })
+
   it('clusters TKT-502 under the KI-208 known issue', () => {
     const { knownIssueClusters } = computeDashboardFlags()
     const cluster = knownIssueClusters.find(c => c.knownIssueId === 'KI-208')
@@ -51,6 +66,31 @@ describe('computeDashboardFlags', () => {
   it('does not flag every historical resolution unconditionally', () => {
     const { historicalAudits } = computeDashboardFlags()
     expect(historicalAudits.every(a => typeof a.reviewRecommended === 'boolean')).toBe(true)
+  })
+
+  describe('accountRollups', () => {
+    it('rolls up Northstar (ACCT-001) with its SLA breach (TKT-501), known-issue match (TKT-504/KI-211), and historical flag (TKT-450)', () => {
+      const { accountRollups } = computeDashboardFlags()
+      const rollup = accountRollups.find(r => r.accountId === 'ACCT-001')
+      expect(rollup).toEqual({
+        accountId: 'ACCT-001',
+        accountName: 'Northstar Logistics',
+        breachCount: 1,
+        knownIssueCount: 1,
+        historicalFlagCount: 1,
+      })
+    })
+
+    it('excludes an account with zero flags (Beacon Retail / ACCT-003)', () => {
+      const { accountRollups } = computeDashboardFlags()
+      expect(accountRollups.find(r => r.accountId === 'ACCT-003')).toBeUndefined()
+    })
+
+    it('sorts by total flag count descending', () => {
+      const { accountRollups } = computeDashboardFlags()
+      const totals = accountRollups.map(r => r.breachCount + r.knownIssueCount + r.historicalFlagCount)
+      expect(totals).toEqual([...totals].sort((a, b) => b - a))
+    })
   })
 
   describe('content-based classification generalizes beyond the two seeded ticket IDs', () => {

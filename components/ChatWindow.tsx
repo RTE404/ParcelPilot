@@ -1,7 +1,7 @@
 'use client'
 import { useChat, Chat } from '@ai-sdk/react'
 import { DefaultChatTransport, lastAssistantMessageIsCompleteWithApprovalResponses, isToolUIPart } from 'ai'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ToolActivityIndicator } from './ToolActivityIndicator'
 import { ReasoningChainPanel } from './ReasoningChainPanel'
 
@@ -16,7 +16,7 @@ const CONFIDENCE_BADGE_STYLES: Record<string, string> = {
   Escalated: 'border-red-300 bg-red-50 text-red-700',
 }
 
-export function ChatWindow({ apiEndpoint }: { apiEndpoint: string }) {
+export function ChatWindow({ apiEndpoint, initialPrompt }: { apiEndpoint: string; initialPrompt?: string }) {
   const [input, setInput] = useState('')
   // Construct our own `Chat` instance (memoized so it's stable across renders and
   // the transport isn't recreated on every render) and pass it to `useChat({ chat })`
@@ -27,6 +27,17 @@ export function ChatWindow({ apiEndpoint }: { apiEndpoint: string }) {
     sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
   }), [apiEndpoint])
   const { messages, sendMessage } = useChat({ chat })
+
+  // I8: design spec §9 click-through — when a dashboard flag links here with a pre-built
+  // prompt, auto-send it as the first message exactly once. Guarded with a ref (not state) so
+  // it can't re-fire on re-renders, and left a no-op entirely when initialPrompt is omitted —
+  // every other current ChatWindow usage passes no such prop and must behave identically.
+  const initialPromptSentRef = useRef(false)
+  useEffect(() => {
+    if (!initialPrompt || initialPromptSentRef.current) return
+    initialPromptSentRef.current = true
+    sendMessage({ text: initialPrompt })
+  }, [initialPrompt, sendMessage])
 
   return (
     <div className="mx-auto flex h-[calc(100vh-48px)] max-w-2xl flex-col p-4">

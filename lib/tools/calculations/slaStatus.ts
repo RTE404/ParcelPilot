@@ -10,7 +10,12 @@ export interface SlaStatusResult {
   citation: string
 }
 
-const P1_KEYWORDS = ['api key', 'credential', 'security incident', 'all shipment creation is failing', 'complete outage', 'unable to create any shipment']
+// Split so a P1 classification's origin (security-specific vs. general-outage) can be told apart
+// — see isSecurityIncident below. P1_KEYWORDS remains the same combined list, so classifySeverity's
+// behavior is unchanged.
+const SECURITY_P1_KEYWORDS = ['api key', 'credential', 'security incident']
+const GENERAL_OUTAGE_P1_KEYWORDS = ['all shipment creation is failing', 'complete outage', 'unable to create any shipment']
+const P1_KEYWORDS = [...SECURITY_P1_KEYWORDS, ...GENERAL_OUTAGE_P1_KEYWORDS]
 const P2_KEYWORDS = ['degraded', 'major feature unavailable', 'partially failing']
 
 export function classifySeverity(ticket: Ticket): Severity {
@@ -18,6 +23,16 @@ export function classifySeverity(ticket: Ticket): Severity {
   if (P1_KEYWORDS.some(k => text.includes(k))) return 'P1'
   if (P2_KEYWORDS.some(k => text.includes(k))) return 'P2'
   return 'P3'
+}
+
+/**
+ * True when the ticket's P1-triggering language is specifically security/credential-exposure
+ * related (not general-outage language) — used by the dashboard's security auto-flag panel
+ * (design spec §9) to surface these regardless of assigned severity.
+ */
+export function isSecurityIncident(ticket: Ticket): boolean {
+  const text = `${ticket.subject} ${ticket.description}`.toLowerCase()
+  return SECURITY_P1_KEYWORDS.some(k => text.includes(k))
 }
 
 // Default targets in minutes, per Support Policy v3 Section 3. Business-hour/business-day

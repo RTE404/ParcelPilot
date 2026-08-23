@@ -1,6 +1,6 @@
-import { loadTickets, loadOrders, getAccountById, REFERENCE_NOW } from '@/lib/data/loadData'
+import { loadTickets, loadOrders, getAccountById, getTicketById, REFERENCE_NOW } from '@/lib/data/loadData'
 import type { Ticket } from '@/lib/data/types'
-import { calculateSlaStatus } from '@/lib/tools/calculations/slaStatus'
+import { calculateSlaStatus, isSecurityIncident } from '@/lib/tools/calculations/slaStatus'
 import { calculateCancellationEligibility } from '@/lib/tools/calculations/cancellationEligibility'
 import { matchKnownIssue } from './knownIssues'
 
@@ -38,12 +38,66 @@ export function isBulkUploadLimitDispute(t: Ticket): boolean {
 export interface SlaFlag { ticketId: string; severity: string; breached: boolean; elapsedMinutes: number; targetMinutes: number }
 export interface KnownIssueCluster { knownIssueId: string; ticketIds: string[]; accountIds: string[] }
 export interface HistoricalAudit { ticketId: string; reviewRecommended: boolean; discrepancy: string | null }
+export interface AccountRollup {
+  accountId: string
+  accountName: string
+  breachCount: number
+  knownIssueCount: number
+  historicalFlagCount: number
+}
 
 export interface DashboardFlags {
   slaFlags: SlaFlag[]
+  securityFlags: SlaFlag[]
   knownIssueClusters: KnownIssueCluster[]
   crossAccountImpacts: KnownIssueCluster[]
   historicalAudits: HistoricalAudit[]
+  accountRollups: AccountRollup[]
+}
+
+function buildSlaFlag(t: Ticket): SlaFlag | null {
+  const account = getAccountById(t.accountId)
+  if (!account) return null
+  const status = calculateSlaStatus(t, account, REFERENCE_NOW)
+  return { ticketId: t.ticketId, severity: status.severity, breached: status.breached, elapsedMinutes: status.elapsedMinutes, targetMinutes: status.targetMinutes }
+}
+
+const byWorstOverrun = (a: SlaFlag, b: SlaFlag) => (b.elapsedMinutes - b.targetMinutes) - (a.elapsedMinutes - a.targetMinutes)
+
+/**
+ * Per-account rollup of SLA breach count + known-issue-cluster ticket count + flagged
+ * historical-resolution discrepancy count — design spec §9's "needs attention" indicator.
+ * Only accounts with at least one flag of any kind are included, sorted by total flag count
+ * descending (most-in-need account first).
+ */
+function computeAccountRollups(slaFlags: SlaFlag[], knownIssueClusters: KnownIssueCluster[], historicalAudits: HistoricalAudit[]): AccountRollup[] {
+  const counts = new Map<string, { breachCount: number; knownIssueCount: number; historicalFlagCount: number }>()
+  const bump = (accountId: string, key: 'breachCount' | 'knownIssueCount' | 'historicalFlagCount') => {
+    const entry = counts.get(accountId) ?? { breachCount: 0, knownIssueCount: 0, historicalFlagCount: 0 }
+    entry[key] += 1
+    counts.set(accountId, entry)
+  }
+
+  for (const f of slaFlags) {
+    if (!f.breached) continue
+    const ticket = getTicketById(f.ticketId)
+    if (ticket) bump(ticket.accountId, 'breachCount')
+  }
+  for (const c of knownIssueClusters) {
+    for (const ticketId of c.ticketIds) {
+      const ticket = getTicketById(ticketId)
+      if (ticket) bump(ticket.accountId, 'knownIssueCount')
+    }
+  }
+  for (const a of historicalAudits) {
+    if (!a.reviewRecommended) continue
+    const ticket = getTicketById(a.ticketId)
+    if (ticket) bump(ticket.accountId, 'historicalFlagCount')
+  }
+
+  return [...counts.entries()]
+    .map(([accountId, c]) => ({ accountId, accountName: getAccountById(accountId)?.accountName ?? accountId, ...c }))
+    .sort((a, b) => (b.breachCount + b.knownIssueCount + b.historicalFlagCount) - (a.breachCount + a.knownIssueCount + a.historicalFlagCount))
 }
 
 export function computeDashboardFlags(): DashboardFlags {
@@ -52,14 +106,17 @@ export function computeDashboardFlags(): DashboardFlags {
   const orders = loadOrders()
 
   const slaFlags: SlaFlag[] = openTickets
-    .map((t): SlaFlag | null => {
-      const account = getAccountById(t.accountId)
-      if (!account) return null
-      const status = calculateSlaStatus(t, account, REFERENCE_NOW)
-      return { ticketId: t.ticketId, severity: status.severity, breached: status.breached, elapsedMinutes: status.elapsedMinutes, targetMinutes: status.targetMinutes }
-    })
+    .map(buildSlaFlag)
     .filter((f): f is SlaFlag => f !== null)
-    .sort((a, b) => (b.elapsedMinutes - b.targetMinutes) - (a.elapsedMinutes - a.targetMinutes))
+    .sort(byWorstOverrun)
+
+  // Security/high-severity auto-flag (design spec §9): credential-exposure/security-incident
+  // language surfaced regardless of assigned severity, distinct from the general SLA list.
+  const securityFlags: SlaFlag[] = openTickets
+    .filter(isSecurityIncident)
+    .map(buildSlaFlag)
+    .filter((f): f is SlaFlag => f !== null)
+    .sort(byWorstOverrun)
 
   const clusterMap = new Map<string, { ticketIds: string[]; accountIds: Set<string> }>()
   for (const t of openTickets) {
@@ -116,5 +173,7 @@ export function computeDashboardFlags(): DashboardFlags {
       return { ticketId: t.ticketId, reviewRecommended: false, discrepancy: null }
     })
 
-  return { slaFlags, knownIssueClusters, crossAccountImpacts, historicalAudits }
+  const accountRollups = computeAccountRollups(slaFlags, knownIssueClusters, historicalAudits)
+
+  return { slaFlags, securityFlags, knownIssueClusters, crossAccountImpacts, historicalAudits, accountRollups }
 }
