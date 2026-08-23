@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createActionTools } from '../actionTools'
+import * as actionLogStore from '../store/actionLog'
 import { resetActionLog } from '../store/actionLog'
 
 const managerSession = { surface: 'internal' as const, staffId: 'priya_mehta', role: 'manager' as const }
@@ -8,6 +9,7 @@ const customerSession = { surface: 'customer' as const, accountId: 'ACCT-001' }
 
 describe('createActionTools', () => {
   beforeEach(() => resetActionLog())
+  afterEach(() => vi.restoreAllMocks())
 
   it('marks every action tool as needing approval', () => {
     const tools = createActionTools(managerSession)
@@ -41,5 +43,25 @@ describe('createActionTools', () => {
   it('exposes only createEscalation to a customer session\'s tool set', () => {
     const tools = createActionTools(customerSession)
     expect(Object.keys(tools)).toEqual(['createEscalation'])
+  })
+
+  // I6 step 3: createEscalation must derive the real accountId from the ticket, the same way
+  // approveCredit already derives it from the order, instead of always recording 'unknown'.
+  it('derives accountId from the ticket when creating an escalation for an existing ticket', async () => {
+    const recordSpy = vi.spyOn(actionLogStore, 'recordAction')
+    const tools = createActionTools(customerSession)
+    // @ts-expect-error execute exists at runtime
+    await tools.createEscalation.execute({ ticketId: 'TKT-501', severity: 'P1', reasonCode: 'SLA_BREACH', note: 'test' })
+
+    expect(recordSpy).toHaveBeenCalledWith(expect.objectContaining({ accountId: 'ACCT-001', type: 'escalation' }))
+  })
+
+  it('falls back to accountId \'unknown\' when the escalation\'s ticket is not found or not accessible', async () => {
+    const recordSpy = vi.spyOn(actionLogStore, 'recordAction')
+    const tools = createActionTools(customerSession)
+    // @ts-expect-error execute exists at runtime
+    await tools.createEscalation.execute({ ticketId: 'TKT-DOES-NOT-EXIST', severity: 'P1', reasonCode: 'SLA_BREACH', note: 'test' })
+
+    expect(recordSpy).toHaveBeenCalledWith(expect.objectContaining({ accountId: 'unknown', type: 'escalation' }))
   })
 })

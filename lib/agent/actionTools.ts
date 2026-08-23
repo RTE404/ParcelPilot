@@ -1,9 +1,10 @@
 import { tool, type ToolSet } from 'ai'
 import { z } from 'zod'
 import type { SessionIdentity } from '@/lib/identity/types'
-import { getOrder } from '@/lib/tools/structuredLookup'
+import { getOrder, getTicket } from '@/lib/tools/structuredLookup'
 import { recordAction } from './store/actionLog'
 import { traceSpan } from '@/lib/observability/traceSpan'
+import { REFERENCE_NOW } from '@/lib/data/loadData'
 
 const APPROVAL_THRESHOLD_INR = 1000
 
@@ -19,7 +20,9 @@ export function createActionTools(session: SessionIdentity): ToolSet {
     needsApproval: true,
     execute: ({ ticketId, severity, reasonCode, note }) =>
       traceSpan('action.createEscalation', { ticketId }, async () => {
-        recordAction({ accountId: 'unknown', type: 'escalation', createdAt: new Date().toISOString() })
+        const ticketResult = getTicket(ticketId, session)
+        const accountId = ticketResult.found ? ticketResult.record.accountId : 'unknown'
+        recordAction({ accountId, type: 'escalation', createdAt: REFERENCE_NOW })
         return { authorized: true, escalationId: `ESC-${ticketId}-${Date.now()}`, ticketId, severity, reasonCode, note }
       }),
   })
@@ -47,7 +50,7 @@ export function createActionTools(session: SessionIdentity): ToolSet {
         }
         const orderResult = getOrder(orderId, session)
         const accountId = orderResult.found ? orderResult.record.accountId : 'unknown'
-        recordAction({ accountId, type: 'credit', amountInr, createdAt: new Date().toISOString() })
+        recordAction({ accountId, type: 'credit', amountInr, createdAt: REFERENCE_NOW })
         return { authorized: true, orderId, amountInr, ticketId }
       }),
   })

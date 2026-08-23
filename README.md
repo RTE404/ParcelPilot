@@ -14,7 +14,8 @@ assessment's required Architecture Note, Product Note, and AI Tool Usage write-u
 
 1. `npm install`
 2. Copy `.env.example` to `.env.local` and set `GOOGLE_GENERATIVE_AI_API_KEY` (a free key from
-   Google AI Studio — https://aistudio.google.com/apikey).
+   Google AI Studio — https://aistudio.google.com/apikey). Optionally set `PARCELPILOT_MODEL_ID`
+   to override the default Gemini model ID (e.g. if Google deprecates the current default).
 3. `npm run parse-data` — parses `ParcelPilot_Assessment_Data.xlsx` into `lib/data/*.json`
    (already committed, but re-run this if the workbook changes).
 4. `npm run dev` — open http://localhost:3000.

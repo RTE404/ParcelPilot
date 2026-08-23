@@ -28,7 +28,7 @@ export function calculateCancellationEligibility(order: Order): CancellationResu
   // status === 'BOOKED'
   const rule = getContractRule(order.accountId)
   if (rule?.cancellationFeeWaived) {
-    return { cancellable: true, feeWaived: true, feeInr: null, reason: 'account contract waives the cancellation fee regardless of timing', citation: `${rule.sourceDoc}, Section 2 (Northstar)` }
+    return { cancellable: true, feeWaived: true, feeInr: null, reason: 'account contract waives the cancellation fee regardless of timing', citation: `${rule.sourceDoc}, Section 2` }
   }
 
   const requestedAt = order.cancellationRequestedAt ? new Date(order.cancellationRequestedAt) : new Date(REFERENCE_NOW)

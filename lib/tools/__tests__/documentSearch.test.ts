@@ -38,4 +38,16 @@ describe('searchDocuments', () => {
     const results = searchDocuments('LumenWorks failed pickup credit', session, 'ACCT-002')
     expect(results.some(r => r.accountScope === 'ACCT-002')).toBe(true)
   })
+
+  // M8: a customer session's own-contract ranking boost must not be suppressible by a
+  // model-supplied targetAccountId — it always uses session.accountId for the boost.
+  it('ignores a client-supplied targetAccountId for a customer session\'s own-contract ranking boost', () => {
+    const session = { surface: 'customer' as const, accountId: 'ACCT-001' }
+    const results = searchDocuments('cancellation fee', session, 'ACCT-002')
+    const contractIdx = results.findIndex(r => r.accountScope === 'ACCT-001')
+    const sopIdx = results.findIndex(r => r.docType === 'sop')
+    expect(contractIdx).toBeGreaterThanOrEqual(0)
+    expect(sopIdx).toBeGreaterThanOrEqual(0)
+    expect(contractIdx).toBeLessThan(sopIdx)
+  })
 })

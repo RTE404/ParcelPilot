@@ -48,7 +48,7 @@ export function searchDocuments(
         }
       }
 
-      const callerAccount = targetAccountId ?? session.accountId
+      const callerAccount = session.surface === 'customer' ? session.accountId : targetAccountId
       if (chunk.accountScope !== null && chunk.accountScope === callerAccount) {
         score += 5
         rankReason += '; boosted — caller\'s own contract'
