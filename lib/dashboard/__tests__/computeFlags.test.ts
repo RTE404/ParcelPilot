@@ -1,5 +1,22 @@
 import { describe, it, expect, vi } from 'vitest'
-import { computeDashboardFlags } from '../computeFlags'
+import { computeDashboardFlags, isCancellationFeeDispute, isBulkUploadLimitDispute } from '../computeFlags'
+import type { Ticket } from '@/lib/data/types'
+
+function makeTicket(overrides: Partial<Ticket>): Ticket {
+  return {
+    ticketId: 'TKT-TEST',
+    accountId: 'ACCT-001',
+    createdAt: '2026-08-16T10:00:00+05:30',
+    status: 'closed',
+    subject: '',
+    description: '',
+    channel: 'email',
+    assignedTo: 'Maya',
+    lastCustomerMessageAt: '2026-08-16T10:00:00+05:30',
+    historicalResolution: null,
+    ...overrides,
+  }
+}
 
 describe('computeDashboardFlags', () => {
   it('flags TKT-501 (Northstar) as an already-breached P1', () => {
@@ -19,12 +36,119 @@ describe('computeDashboardFlags', () => {
     const { historicalAudits } = computeDashboardFlags()
     const audit = historicalAudits.find(a => a.ticketId === 'TKT-450')
     expect(audit?.reviewRecommended).toBe(true)
+    expect(audit?.discrepancy).toMatch(/waives it entirely/)
   })
 
-  it('does not flag a historical resolution that agrees with current rules', () => {
+  it('flags TKT-451 as a historical resolution citing the known-issue threshold instead of the product limit', () => {
     const { historicalAudits } = computeDashboardFlags()
-    // TKT-451's historical answer conflates a known-issue threshold with the plan limit — flagged too.
+    // TKT-451's historical answer conflates the KI-208 failure threshold (~3,000 rows) with the
+    // actual 5,000-row product limit — this must still be flagged after generalizing the audit.
+    const audit = historicalAudits.find(a => a.ticketId === 'TKT-451')
+    expect(audit?.reviewRecommended).toBe(true)
+    expect(audit?.discrepancy).toMatch(/5000|5,000/)
+  })
+
+  it('does not flag every historical resolution unconditionally', () => {
+    const { historicalAudits } = computeDashboardFlags()
     expect(historicalAudits.every(a => typeof a.reviewRecommended === 'boolean')).toBe(true)
+  })
+
+  describe('content-based classification generalizes beyond the two seeded ticket IDs', () => {
+    it('isCancellationFeeDispute matches on content, not ticket ID', () => {
+      expect(isCancellationFeeDispute(makeTicket({
+        ticketId: 'TKT-999',
+        subject: 'Cancellation fee dispute',
+        description: 'Customer disputes a cancellation fee charged after booking.',
+        historicalResolution: 'Agent told customer a INR 500 cancellation fee applied.',
+      }))).toBe(true)
+      expect(isCancellationFeeDispute(makeTicket({
+        subject: 'How do we change the billing contact?',
+        description: 'Customer wants to replace the billing-contact email on their account.',
+        historicalResolution: 'Agent updated the billing contact per the request.',
+      }))).toBe(false)
+    })
+
+    it('isBulkUploadLimitDispute matches on content, not ticket ID', () => {
+      expect(isBulkUploadLimitDispute(makeTicket({
+        ticketId: 'TKT-998',
+        subject: 'Bulk CSV upload row limit dispute',
+        description: 'Customer disputes the row limit quoted for CSV bulk upload.',
+        historicalResolution: 'Agent told customer the row limit is 2,000 rows.',
+      }))).toBe(true)
+      expect(isBulkUploadLimitDispute(makeTicket({
+        subject: 'How do we change the billing contact?',
+        description: 'Customer wants to replace the billing-contact email on their account.',
+        historicalResolution: 'Agent updated the billing contact per the request.',
+      }))).toBe(false)
+    })
+
+    it('flags a brand-new cancellation-fee-dispute ticket (different ID from TKT-450) with a wrong fee claim', async () => {
+      vi.resetModules()
+      vi.doMock('@/lib/data/loadData', async () => {
+        const actual = await vi.importActual<typeof import('@/lib/data/loadData')>('@/lib/data/loadData')
+        const fictionalTicket = makeTicket({
+          ticketId: 'TKT-999',
+          accountId: 'ACCT-002', // LumenWorks — not fee-waived, so the calculator computes a real fee
+          subject: 'Cancellation fee dispute',
+          description: 'LumenWorks disputes the cancellation fee charged for a BOOKED shipment.',
+          historicalResolution: 'Agent told customer a INR 500 cancellation fee applied.',
+        })
+        return { ...actual, loadTickets: () => [...actual.loadTickets(), fictionalTicket] }
+      })
+      const { computeDashboardFlags: computeWithFictionalTicket } = await import('../computeFlags')
+      const { historicalAudits } = computeWithFictionalTicket()
+      const audit = historicalAudits.find(a => a.ticketId === 'TKT-999')
+      // A still-ID-gated implementation (branching on 'TKT-450'/'TKT-451') would fall through to
+      // { reviewRecommended: false, discrepancy: null } here — proving the generalization works.
+      expect(audit?.reviewRecommended).toBe(true)
+      expect(audit?.discrepancy).toMatch(/500/)
+      vi.doUnmock('@/lib/data/loadData')
+      vi.resetModules()
+    })
+
+    it('flags a brand-new bulk-upload-limit-dispute ticket (different ID from TKT-451) with a wrong claimed limit', async () => {
+      vi.resetModules()
+      vi.doMock('@/lib/data/loadData', async () => {
+        const actual = await vi.importActual<typeof import('@/lib/data/loadData')>('@/lib/data/loadData')
+        const fictionalTicket = makeTicket({
+          ticketId: 'TKT-998',
+          accountId: 'ACCT-003',
+          subject: 'Bulk CSV upload row limit dispute',
+          description: 'Customer disputes the row limit quoted for CSV bulk upload.',
+          historicalResolution: 'Agent told customer the row limit is 2,000 rows.',
+        })
+        return { ...actual, loadTickets: () => [...actual.loadTickets(), fictionalTicket] }
+      })
+      const { computeDashboardFlags: computeWithFictionalTicket } = await import('../computeFlags')
+      const { historicalAudits } = computeWithFictionalTicket()
+      const audit = historicalAudits.find(a => a.ticketId === 'TKT-998')
+      expect(audit?.reviewRecommended).toBe(true)
+      expect(audit?.discrepancy).toMatch(/2000|2,000/)
+      vi.doUnmock('@/lib/data/loadData')
+      vi.resetModules()
+    })
+
+    it('does not flag a historical resolution unrelated to either dispute category', async () => {
+      vi.resetModules()
+      vi.doMock('@/lib/data/loadData', async () => {
+        const actual = await vi.importActual<typeof import('@/lib/data/loadData')>('@/lib/data/loadData')
+        const fictionalTicket = makeTicket({
+          ticketId: 'TKT-997',
+          accountId: 'ACCT-003',
+          subject: 'How do we change the billing contact?',
+          description: 'Customer wants to replace the billing-contact email on their account.',
+          historicalResolution: 'Agent updated the billing contact per the request.',
+        })
+        return { ...actual, loadTickets: () => [...actual.loadTickets(), fictionalTicket] }
+      })
+      const { computeDashboardFlags: computeWithFictionalTicket } = await import('../computeFlags')
+      const { historicalAudits } = computeWithFictionalTicket()
+      const audit = historicalAudits.find(a => a.ticketId === 'TKT-997')
+      expect(audit?.reviewRecommended).toBe(false)
+      expect(audit?.discrepancy).toBeNull()
+      vi.doUnmock('@/lib/data/loadData')
+      vi.resetModules()
+    })
   })
 
   it('still picks the BOOKED order for TKT-450 even if a non-BOOKED order for the account sorts first', async () => {

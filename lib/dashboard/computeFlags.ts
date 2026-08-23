@@ -1,7 +1,39 @@
 import { loadTickets, loadOrders, getAccountById, REFERENCE_NOW } from '@/lib/data/loadData'
+import type { Ticket } from '@/lib/data/types'
 import { calculateSlaStatus } from '@/lib/tools/calculations/slaStatus'
 import { calculateCancellationEligibility } from '@/lib/tools/calculations/cancellationEligibility'
 import { matchKnownIssue } from './knownIssues'
+
+// Bulk Upload is documented (lib/data/documentChunks.ts) as supporting up to 5,000 rows per CSV.
+// This is a structural product fact sourced from document content, not something re-parsed from
+// prose on every audit — same pattern as knownIssues.ts's KNOWN_ISSUES table.
+const PRODUCT_BULK_UPLOAD_ROW_LIMIT = 5000
+
+const CANCELLATION_FEE_AMOUNT_PATTERN = /(?:INR|₹)\s*([\d,]+)/i
+const BULK_UPLOAD_ROW_LIMIT_PATTERN = /([\d,]+)\s*rows?/i
+// Same "digit near row(s)" shape as knownIssues.ts's ROW_COUNT_PATTERN, but used here purely to
+// detect that a ticket is *about* a row count, not to extract the claimed number.
+const ROW_COUNT_MENTION_PATTERN = /\d[\d,]*\s*-?\s*rows?\b/
+
+function ticketText(t: Ticket): string {
+  return `${t.subject} ${t.description} ${t.historicalResolution ?? ''}`.toLowerCase()
+}
+
+/** A cancellation-fee dispute: the ticket's content mentions both a cancellation and a fee. */
+export function isCancellationFeeDispute(t: Ticket): boolean {
+  const text = ticketText(t)
+  const mentionsCancellation = text.includes('cancel')
+  const mentionsFee = text.includes('fee') || CANCELLATION_FEE_AMOUNT_PATTERN.test(text)
+  return mentionsCancellation && mentionsFee
+}
+
+/** A bulk-upload row-limit dispute: the ticket's content mentions bulk upload/CSV and a row count. */
+export function isBulkUploadLimitDispute(t: Ticket): boolean {
+  const text = ticketText(t)
+  const mentionsBulkUpload = text.includes('csv') || text.includes('bulk upload')
+  const mentionsRowCount = ROW_COUNT_MENTION_PATTERN.test(text)
+  return mentionsBulkUpload && mentionsRowCount
+}
 
 export interface SlaFlag { ticketId: string; severity: string; breached: boolean; elapsedMinutes: number; targetMinutes: number }
 export interface KnownIssueCluster { knownIssueId: string; ticketIds: string[]; accountIds: string[] }
@@ -43,18 +75,43 @@ export function computeDashboardFlags(): DashboardFlags {
 
   const historicalAudits: HistoricalAudit[] = allTickets
     .filter(t => t.historicalResolution !== null)
-    .map(t => {
-      // TKT-450: historical resolution claimed a ₹250 fee applied; Northstar's contract waives fees entirely.
-      if (t.ticketId === 'TKT-450') {
-        const order = orders.find(o => o.accountId === t.accountId && o.status === 'BOOKED') // representative BOOKED order for this account (TKT-450's resolution was specifically about a BOOKED shipment)
-        const current = order ? calculateCancellationEligibility(order) : null
-        const disagrees = current?.feeWaived === true && /250/.test(t.historicalResolution ?? '')
-        return { ticketId: t.ticketId, reviewRecommended: disagrees, discrepancy: disagrees ? 'historical resolution charged a fee; current contract waives it entirely' : null }
+    .map((t): HistoricalAudit => {
+      // Cancellation-fee dispute: reconstruct the account's BOOKED order, re-run the calculator,
+      // and compare its verdict against what the historical resolution claimed — in both
+      // directions (waived-but-charged, and charged-with-a-mismatched-amount).
+      if (isCancellationFeeDispute(t)) {
+        // representative BOOKED order for this account (a cancellation-fee dispute is inherently
+        // about a BOOKED, not-yet-picked-up shipment)
+        const order = orders.find(o => o.accountId === t.accountId && o.status === 'BOOKED')
+        if (!order) {
+          // No BOOKED order to audit against — insufficient data, not a bug.
+          return { ticketId: t.ticketId, reviewRecommended: false, discrepancy: null }
+        }
+        const current = calculateCancellationEligibility(order)
+        const claimedMatch = t.historicalResolution?.match(CANCELLATION_FEE_AMOUNT_PATTERN) ?? null
+        const claimedFee = claimedMatch ? Number(claimedMatch[1].replace(/,/g, '')) : null
+
+        let discrepancy: string | null = null
+        if (current.feeWaived && claimedFee !== null && claimedFee > 0) {
+          discrepancy = `historical resolution charged a fee (INR ${claimedFee}); current calculation waives it entirely`
+        } else if (!current.feeWaived && claimedFee !== null && claimedFee !== current.feeInr) {
+          discrepancy = `historical resolution cited a fee of INR ${claimedFee}; current calculation is INR ${current.feeInr}`
+        }
+        return { ticketId: t.ticketId, reviewRecommended: discrepancy !== null, discrepancy }
       }
-      // TKT-451: historical resolution conflated the KI-208 failure threshold (~3,000 rows) with the actual 5,000-row product limit.
-      if (t.ticketId === 'TKT-451') {
-        const disagrees = /3,?000/.test(t.historicalResolution ?? '')
-        return { ticketId: t.ticketId, reviewRecommended: disagrees, discrepancy: disagrees ? 'historical resolution cited the known-issue threshold (3,000 rows) as the product limit; actual limit is 5,000 rows' : null }
+      // Bulk-upload row-limit dispute: compare the claimed limit in the historical resolution
+      // against the actual documented product limit.
+      if (isBulkUploadLimitDispute(t)) {
+        const claimedMatch = t.historicalResolution?.match(BULK_UPLOAD_ROW_LIMIT_PATTERN) ?? null
+        const claimedLimit = claimedMatch ? Number(claimedMatch[1].replace(/,/g, '')) : null
+        const disagrees = claimedLimit !== null && claimedLimit !== PRODUCT_BULK_UPLOAD_ROW_LIMIT
+        return {
+          ticketId: t.ticketId,
+          reviewRecommended: disagrees,
+          discrepancy: disagrees
+            ? `historical resolution cited a ${claimedLimit}-row limit; actual product limit is ${PRODUCT_BULK_UPLOAD_ROW_LIMIT} rows`
+            : null,
+        }
       }
       return { ticketId: t.ticketId, reviewRecommended: false, discrepancy: null }
     })
