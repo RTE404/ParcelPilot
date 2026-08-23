@@ -1,8 +1,8 @@
 # ParcelPilot Support Agent — Design Spec
 
 **Date:** 2026-08-22
-**Status:** Draft, pending review
-**Context:** CalQuity AI Engineer assessment — build an AI agent system for ParcelPilot, a fictional B2B logistics platform, per `CalQuity AI Engineer — Job Description & AI Agent Assessment.md`. Background/analysis of the assignment and data pack lives in `ParcelPilot_Assignment_Explained.md`; the test plan lives in `Test_Prompts_Robustness_Checklist.md`.
+**Status:** Final — implemented, reviewed, and deployed (see [`SUBMISSION_NOTES.md`](../../SUBMISSION_NOTES.md))
+**Context:** CalQuity AI Engineer assessment — build an AI agent system for ParcelPilot, a fictional B2B logistics platform, per `CalQuity AI Engineer — Job Description & AI Agent Assessment.md`. Background/analysis of the assignment and data pack lives in `ParcelPilot_Assignment_Explained.md`; the test plan lived in `Test_Prompts_Robustness_Checklist.md` (used during development, since removed from the repo — see Task 21 of the implementation plan for the verification pass it drove).
 
 ---
 
