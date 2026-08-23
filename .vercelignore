@@ -1,0 +1,13 @@
+# Vercel's own upload walker doesn't reliably skip this: it's a separate,
+# independently-versioned project (with its own .git, node_modules, Python
+# venvs, and Rust target/ dirs) that happens to live inside this repo's
+# working directory. Already in .gitignore; listed explicitly here too
+# because it's what pushed the upload to 2.6GB and aborted the deploy.
+Observability Module/
+
+node_modules/
+.next/
+out/
+dist/
+build/
+.superpowers/
