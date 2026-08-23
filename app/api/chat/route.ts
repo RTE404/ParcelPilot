@@ -56,7 +56,7 @@ export async function POST(req: Request) {
         reviseAnswer: async (bufferedText, issues, toolResultsThisTurn) => {
           const { text } = await generateText({
             model: google(MODEL_ID),
-            prompt: `You previously drafted this answer to a support query:\n"""\n${bufferedText}\n"""\n\nA review found these issues:\n${issues.join('\n')}\n\nRevise the answer to fix these issues, using ONLY these tool results from this turn as your source of facts — do not invent anything not present here:\n${JSON.stringify(toolResultsThisTurn, null, 2)}\n\nReturn only the revised answer text, nothing else.`,
+            prompt: `You previously drafted this answer to a support query:\n"""\n${bufferedText}\n"""\n\nA review found these issues:\n${issues.join('\n')}\n\nRevise the answer to fix these issues, using ONLY these tool results from this conversation as your source of facts — do not invent anything not present here:\n${JSON.stringify(toolResultsThisTurn, null, 2)}\n\nReturn only the revised answer text, nothing else.`,
           })
           return text
         },

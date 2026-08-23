@@ -162,6 +162,15 @@ describe('runSelfCheckStream', () => {
     // the never-verified drafts must not leak through
     expect(written.some(c => c.type === 'text-delta' && c.delta.includes('₹9,999'))).toBe(false)
     expect(written.some(c => c.type === 'text-delta' && c.delta.includes('still wrong'))).toBe(false)
+    // M1: `finish` must be deferred until after the escalation text in this branch too — not
+    // just the happy path (test (b)) — otherwise a future edit could silently regress
+    // protocol-conformance in exactly the branch a hasty fix would forget to check.
+    expect(written).toEqual([
+      { type: 'text-start', id: 'txt_1' },
+      { type: 'text-delta', id: 'txt_1', delta: SELF_CHECK_ESCALATION_MESSAGE },
+      { type: 'text-end', id: 'txt_1' },
+      { type: 'finish' },
+    ])
   })
 
   it('(e) a turn with zero text chunks emits nothing extra beyond the forwarded chunks', async () => {

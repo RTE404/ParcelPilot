@@ -161,7 +161,7 @@ describe('POST /api/chat', () => {
     expect(genArgs.prompt).toBe(
       'You previously drafted this answer to a support query:\n"""\nthe buffered draft\n"""\n\n' +
         'A review found these issues:\nissue A\nissue B\n\n' +
-        'Revise the answer to fix these issues, using ONLY these tool results from this turn as ' +
+        'Revise the answer to fix these issues, using ONLY these tool results from this conversation as ' +
         'your source of facts — do not invent anything not present here:\n' +
         JSON.stringify([{ creditInr: 240 }], null, 2) +
         '\n\nReturn only the revised answer text, nothing else.',
