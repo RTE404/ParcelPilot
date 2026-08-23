@@ -7,6 +7,12 @@ export const ACTION_TOOL_NAMES = new Set(['createEscalation', 'updateTicketSever
 export const SELF_CHECK_ESCALATION_MESSAGE =
   "I wasn't able to verify this answer against the available data with enough confidence to present it, so I'm escalating this for a team member to review directly rather than risk giving you incorrect information."
 
+export const STEP_CAP_ESCALATION_MESSAGE =
+  "I wasn't able to find a clear answer within my usual research steps for this request, so I'm escalating it for a team member to look into directly rather than guessing further."
+
+/** Synthetic id for the step-cap fallback text part — there is no real `text-start` chunk to reuse an id from in this case, since no text was ever produced. */
+const FALLBACK_TEXT_ID = 'step-cap-fallback'
+
 /** Design spec §5.4 "Trust and Reliability" confidence labels, shown as a badge on every direct answer. */
 export type ConfidenceLabel = 'High' | 'Resolved conflict' | 'Low' | 'Escalated'
 
@@ -112,6 +118,7 @@ export async function runSelfCheckStream({ chunks, writer, runSelfCheck, reviseA
   // forwarded before the checked text (as this used to do) only worked because the AI SDK
   // client's `finish` handling happens to be non-terminal in the installed version.
   let finishChunk: UIMessageChunk | null = null
+  let sawApprovalRequest = false
   const toolResultsThisTurn: unknown[] = []
   const toolNamesThisTurn: string[] = []
 
@@ -129,25 +136,36 @@ export async function runSelfCheckStream({ chunks, writer, runSelfCheck, reviseA
     }
     if (chunk.type === 'tool-output-available') toolResultsThisTurn.push(chunk.output)
     if (chunk.type === 'tool-input-available') toolNamesThisTurn.push(chunk.toolName)
+    if (chunk.type === 'tool-approval-request') sawApprovalRequest = true
     writer.write(chunk)
   }
 
-  // A turn can legitimately have zero text (e.g. it ended awaiting tool approval). Nothing to
-  // check or emit in that case — but the buffered `finish` chunk (if any) still needs to reach
-  // the client.
-  if (bufferedText.length === 0) {
-    if (finishChunk) writer.write(finishChunk)
-    return
-  }
-
   // I7: every direct answer carries a confidence badge (design spec §5.4) — written alongside,
-  // not instead of, the text, in every branch below including the escalation branch.
+  // not instead of, the text, in every branch below including the escalation branches.
   const emit = (text: string, outcome: SelfCheckOutcome, allToolResultsForLabel: unknown[]) => {
     writer.write({ type: 'text-start', id: textId! })
     writer.write({ type: 'text-delta', id: textId!, delta: text })
     writer.write({ type: 'text-end', id: textId! })
     writer.write({ type: 'data-confidence', id: `${textId}-confidence`, data: { label: classifyConfidence(outcome, allToolResultsForLabel) } })
     if (finishChunk) writer.write(finishChunk)
+  }
+
+  // A turn can legitimately have zero text (e.g. it ended awaiting tool approval) — nothing to
+  // check or emit in that case beyond the buffered `finish` chunk. But zero text can also mean
+  // the tool-calling loop hit its step cap (`stopWhen: stepCountIs(...)` in app/api/chat/route.ts)
+  // while still mid-research, without ever producing an answer or an approval pause — LLD §11's
+  // documented-but-previously-unimplemented step-cap-exhaustion case. `finishReason` can't tell
+  // these apart (both report 'tool-calls'), so we distinguish by whether an approval was actually
+  // requested this turn.
+  if (bufferedText.length === 0) {
+    if (!sawApprovalRequest) {
+      textId = FALLBACK_TEXT_ID
+      const allToolResults = [...priorToolResults, ...toolResultsThisTurn]
+      emit(STEP_CAP_ESCALATION_MESSAGE, 'escalated', allToolResults)
+      return
+    }
+    if (finishChunk) writer.write(finishChunk)
+    return
   }
 
   // I9: prior-turn tool results (e.g. read-only lookups from before a tool-approval resend) are

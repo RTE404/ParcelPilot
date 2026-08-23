@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { runSelfCheckStream, extractToolResultsFromMessages, classifyConfidence, SELF_CHECK_ESCALATION_MESSAGE } from '../selfCheckStream'
+import { runSelfCheckStream, extractToolResultsFromMessages, classifyConfidence, SELF_CHECK_ESCALATION_MESSAGE, STEP_CAP_ESCALATION_MESSAGE } from '../selfCheckStream'
 import type { UIMessageChunk, UIMessage } from 'ai'
 import type { SelfCheckResult } from '../selfCheck'
 
@@ -22,21 +22,24 @@ function textChunks(id: string, text: string): UIMessageChunk[] {
 
 describe('runSelfCheckStream', () => {
   it('(a) forwards every non-text chunk unmodified and in arrival order, without triggering self-check', async () => {
-    const chunks: UIMessageChunk[] = [
+    // Includes trailing text so this exercises the ordinary answer path, not the zero-text
+    // branch — a chunk stream with tool activity but no text and no approval request is now the
+    // step-cap-exhaustion case (see test (f) below), which is a deliberately different scenario.
+    const nonTextChunks: UIMessageChunk[] = [
       { type: 'start' },
       { type: 'start-step' },
       { type: 'tool-input-available', toolCallId: 'call_1', toolName: 'getOrder', input: { orderId: 'ORD-1' } },
       { type: 'tool-output-available', toolCallId: 'call_1', output: { orderId: 'ORD-1', status: 'shipped' } },
       { type: 'finish-step' },
-      { type: 'finish' },
     ]
+    const chunks: UIMessageChunk[] = [...nonTextChunks, ...textChunks('txt_1', 'Your order has shipped.'), { type: 'finish' }]
     const { writer, written } = collectingWriter()
     const runSelfCheck = vi.fn()
     const reviseAnswer = vi.fn()
 
     await runSelfCheckStream({ chunks: streamOf(chunks), writer, runSelfCheck, reviseAnswer })
 
-    expect(written).toEqual(chunks)
+    expect(written.slice(0, nonTextChunks.length)).toEqual(nonTextChunks)
     expect(runSelfCheck).not.toHaveBeenCalled()
     expect(reviseAnswer).not.toHaveBeenCalled()
   })
@@ -199,6 +202,41 @@ describe('runSelfCheckStream', () => {
     expect(written.some(c => c.type.startsWith('text-'))).toBe(false)
     expect(runSelfCheck).not.toHaveBeenCalled()
     expect(reviseAnswer).not.toHaveBeenCalled()
+  })
+
+  it('(f) a turn that exhausts the step cap (no approval request seen), zero text, emits the step-cap escalation fallback', async () => {
+    const chunks: UIMessageChunk[] = [
+      { type: 'start' },
+      { type: 'tool-input-available', toolCallId: 'call_1', toolName: 'getTicket', input: { ticketId: 'TKT-503' } },
+      { type: 'tool-output-available', toolCallId: 'call_1', output: { ticketId: 'TKT-503', status: 'open' } },
+      { type: 'tool-input-available', toolCallId: 'call_2', toolName: 'searchDocuments', input: { query: 'change billing contact' } },
+      { type: 'tool-output-available', toolCallId: 'call_2', output: { results: [] } },
+      { type: 'tool-input-available', toolCallId: 'call_3', toolName: 'getAccount', input: { accountId: 'ACC-1' } },
+      { type: 'tool-output-available', toolCallId: 'call_3', output: { accountId: 'ACC-1', plan: 'Enterprise' } },
+      { type: 'finish', finishReason: 'tool-calls' },
+    ]
+    const { writer, written } = collectingWriter()
+    const runSelfCheck = vi.fn()
+    const reviseAnswer = vi.fn()
+
+    await runSelfCheckStream({ chunks: streamOf(chunks), writer, runSelfCheck, reviseAnswer })
+
+    expect(runSelfCheck).not.toHaveBeenCalled()
+    expect(reviseAnswer).not.toHaveBeenCalled()
+    expect(written).toEqual([
+      { type: 'start' },
+      { type: 'tool-input-available', toolCallId: 'call_1', toolName: 'getTicket', input: { ticketId: 'TKT-503' } },
+      { type: 'tool-output-available', toolCallId: 'call_1', output: { ticketId: 'TKT-503', status: 'open' } },
+      { type: 'tool-input-available', toolCallId: 'call_2', toolName: 'searchDocuments', input: { query: 'change billing contact' } },
+      { type: 'tool-output-available', toolCallId: 'call_2', output: { results: [] } },
+      { type: 'tool-input-available', toolCallId: 'call_3', toolName: 'getAccount', input: { accountId: 'ACC-1' } },
+      { type: 'tool-output-available', toolCallId: 'call_3', output: { accountId: 'ACC-1', plan: 'Enterprise' } },
+      { type: 'text-start', id: 'step-cap-fallback' },
+      { type: 'text-delta', id: 'step-cap-fallback', delta: STEP_CAP_ESCALATION_MESSAGE },
+      { type: 'text-end', id: 'step-cap-fallback' },
+      { type: 'data-confidence', id: 'step-cap-fallback-confidence', data: { label: 'Escalated' } },
+      { type: 'finish', finishReason: 'tool-calls' },
+    ])
   })
 
   it('reuses the first-seen text-start id even when text arrives in multiple spans across the turn', async () => {
