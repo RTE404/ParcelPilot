@@ -287,6 +287,14 @@ describe('classifyConfidence', () => {
   it('(I7) ignores non-plain-object tool results and results without a citation/escalate field', () => {
     expect(classifyConfidence('passed', [null, 'raw string', 42, [1, 2], { orderId: 'ORD-1' }])).toBe('High')
   })
+
+  it('(I7) priority order: Escalated beats Resolved conflict when both signals are present', () => {
+    expect(classifyConfidence('passed', [{ creditInr: 5000, escalate: 'EXCEEDS_APPROVAL_LIMIT', citation: '05_Northstar_Logistics_Enterprise_Agreement.pdf' }])).toBe('Escalated')
+  })
+
+  it('(I7) priority order: Resolved conflict beats Low when both signals are present', () => {
+    expect(classifyConfidence('revised', [{ creditInr: 800, citation: '05_Northstar_Logistics_Enterprise_Agreement.pdf' }])).toBe('Resolved conflict')
+  })
 })
 
 describe('extractToolResultsFromMessages', () => {
