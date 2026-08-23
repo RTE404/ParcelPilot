@@ -191,6 +191,43 @@ describe('computeDashboardFlags', () => {
     })
   })
 
+  describe('computeAccountRollups', () => {
+    it('correctly attributes a ticket that is both an SLA breach and a known-issue-cluster member to both counts, without conflating them', async () => {
+      vi.resetModules()
+      vi.doMock('@/lib/data/loadData', async () => {
+        const actual = await vi.importActual<typeof import('@/lib/data/loadData')>('@/lib/data/loadData')
+        // Old enough to breach SLA regardless of plan/severity; matches KI-208's keywords so it
+        // also clusters as a known issue — the one overlap case the current seed data lacks.
+        const overlappingTicket = makeTicket({
+          ticketId: 'TKT-996',
+          accountId: 'ACCT-002',
+          status: 'open',
+          createdAt: '2026-08-01T00:00:00+05:30',
+          subject: 'Bulk CSV upload failing again',
+          description: 'Customer reports repeated bulk upload failures for a 4,000-row CSV file.',
+        })
+        const tickets = [...actual.loadTickets(), overlappingTicket]
+        // computeAccountRollups resolves each flag back to its account via getTicketById, which
+        // internally calls loadTickets() through its own module-scoped reference — overriding
+        // loadTickets alone doesn't patch that internal call, so getTicketById must be
+        // overridden too, consistently, against the same extended ticket list.
+        return { ...actual, loadTickets: () => tickets, getTicketById: (id: string) => tickets.find(t => t.ticketId === id) }
+      })
+      const { computeDashboardFlags: computeWithOverlap } = await import('../computeFlags')
+      const { slaFlags, knownIssueClusters, accountRollups } = computeWithOverlap()
+
+      expect(slaFlags.find(f => f.ticketId === 'TKT-996')?.breached).toBe(true)
+      expect(knownIssueClusters.find(c => c.knownIssueId === 'KI-208')?.ticketIds).toContain('TKT-996')
+
+      const rollup = accountRollups.find(r => r.accountId === 'ACCT-002')
+      expect(rollup).toBeDefined()
+      expect(rollup?.breachCount).toBeGreaterThanOrEqual(1)
+      expect(rollup?.knownIssueCount).toBeGreaterThanOrEqual(1)
+      vi.doUnmock('@/lib/data/loadData')
+      vi.resetModules()
+    })
+  })
+
   it('still picks the BOOKED order for TKT-450 even if a non-BOOKED order for the account sorts first', async () => {
     vi.resetModules()
     vi.doMock('@/lib/data/loadData', async () => {
