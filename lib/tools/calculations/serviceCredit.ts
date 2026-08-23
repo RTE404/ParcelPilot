@@ -29,6 +29,7 @@ export function calculateServiceCredit(order: Order, referenceNow: string, prior
   }
 
   const rule = getContractRule(order.accountId)
+  const thresholdFromContract = rule?.creditDelayThresholdHours != null
   const thresholdHours = rule?.creditDelayThresholdHours ?? DEFAULT_THRESHOLD_HOURS
 
   const windowEnd = new Date(order.pickupWindowEnd)
@@ -36,9 +37,10 @@ export function calculateServiceCredit(order: Order, referenceNow: string, prior
   const lateHours = (comparisonPoint.getTime() - windowEnd.getTime()) / 3_600_000
 
   if (lateHours <= thresholdHours) {
-    return { eligible: false, creditInr: null, requiresApproval: false, reason: `late by ${lateHours.toFixed(1)}h, at or under the ${thresholdHours}h threshold`, citation: rule?.sourceDoc ?? SOP_CITATION }
+    return { eligible: false, creditInr: null, requiresApproval: false, reason: `late by ${lateHours.toFixed(1)}h, at or under the ${thresholdHours}h threshold`, citation: thresholdFromContract ? rule!.sourceDoc : SOP_CITATION }
   }
 
+  const amountFromContract = rule?.creditAmountInr != null
   const creditInr = rule?.creditAmountInr ?? Math.min(DEFAULT_CAP_INR, Math.round(order.shipmentFeeInr * 0.10))
 
   const monthlyCap = rule?.creditMonthlyCapInr
@@ -52,6 +54,6 @@ export function calculateServiceCredit(order: Order, referenceNow: string, prior
 
   return {
     eligible: true, creditInr, requiresApproval: creditInr > APPROVAL_THRESHOLD_INR,
-    reason: `late by ${lateHours.toFixed(1)}h, carrier at fault`, citation: rule?.sourceDoc ?? SOP_CITATION,
+    reason: `late by ${lateHours.toFixed(1)}h, carrier at fault`, citation: amountFromContract ? rule!.sourceDoc : SOP_CITATION,
   }
 }

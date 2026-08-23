@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
-import { runSelfCheckStream, SELF_CHECK_ESCALATION_MESSAGE } from '../selfCheckStream'
-import type { UIMessageChunk } from 'ai'
+import { runSelfCheckStream, extractToolResultsFromMessages, SELF_CHECK_ESCALATION_MESSAGE } from '../selfCheckStream'
+import type { UIMessageChunk, UIMessage } from 'ai'
 import type { SelfCheckResult } from '../selfCheck'
 
 async function* streamOf(chunks: UIMessageChunk[]): AsyncIterable<UIMessageChunk> {
@@ -74,14 +74,16 @@ describe('runSelfCheckStream', () => {
 
     expect(runSelfCheck).not.toHaveBeenCalled()
     expect(reviseAnswer).not.toHaveBeenCalled()
-    // Non-text chunks (here, `finish`) are forwarded live during iteration; the buffered text
-    // is only emitted after the source stream ends, so it lands after `finish` in write order.
+    // M1: `finish` is buffered (not forwarded live like other non-text chunks) and written
+    // through only after the final text, so the wire order is always
+    // non-text/non-finish chunks, then text, then finish — protocol-conformant regardless of
+    // client leniency around a `finish` chunk arriving before the message's text.
     expect(written).toEqual([
       { type: 'start' },
-      { type: 'finish' },
       { type: 'text-start', id: 'txt_1' },
       { type: 'text-delta', id: 'txt_1', delta: 'Your package is on its way, no issues found.' },
       { type: 'text-end', id: 'txt_1' },
+      { type: 'finish' },
     ])
   })
 
@@ -203,5 +205,74 @@ describe('runSelfCheckStream', () => {
       { type: 'text-delta', id: 'txt_1', delta: 'Before the tool call, and after it too.' },
       { type: 'text-end', id: 'txt_1' },
     ])
+  })
+
+  // I9: prior-turn tool results must reach both the self-check and revise calls, combined with
+  // whatever this turn's own chunk stream contributed — not just the (possibly empty) current
+  // turn's results.
+  it('(I9) combines priorToolResults with this turn\'s tool results when calling runSelfCheck and reviseAnswer', async () => {
+    const chunks: UIMessageChunk[] = [...textChunks('txt_1', 'Your credit is ₹240.'), { type: 'finish' }]
+    const { writer } = collectingWriter()
+    const priorToolResults = [{ orderId: 'ORD-1', status: 'shipped' }, { ticketId: 'TKT-1' }]
+
+    const runSelfCheck = vi
+      .fn<(draft: string, results: unknown[]) => Promise<SelfCheckResult>>()
+      .mockResolvedValueOnce({ pass: false, issues: ['needs revision'] })
+      .mockResolvedValueOnce({ pass: true, issues: [] })
+    const reviseAnswer = vi.fn().mockResolvedValue('Your credit is ₹240 (revised).')
+
+    await runSelfCheckStream({ chunks: streamOf(chunks), writer, runSelfCheck, reviseAnswer, priorToolResults })
+
+    // No tool-output-available chunks appeared in this turn's stream, so the only way these
+    // prior results can reach the calls below is via `priorToolResults`.
+    expect(runSelfCheck).toHaveBeenNthCalledWith(1, 'Your credit is ₹240.', priorToolResults)
+    expect(reviseAnswer).toHaveBeenCalledWith('Your credit is ₹240.', ['needs revision'], priorToolResults)
+    expect(runSelfCheck).toHaveBeenNthCalledWith(2, 'Your credit is ₹240 (revised).', priorToolResults)
+  })
+
+  it('(I9) defaults priorToolResults to empty when omitted, preserving prior behavior', async () => {
+    const chunks: UIMessageChunk[] = [...textChunks('txt_1', 'Your refund is ₹500.'), { type: 'finish' }]
+    const { writer } = collectingWriter()
+    const runSelfCheck = vi.fn<(draft: string, results: unknown[]) => Promise<SelfCheckResult>>().mockResolvedValue({ pass: true, issues: [] })
+
+    await runSelfCheckStream({ chunks: streamOf(chunks), writer, runSelfCheck, reviseAnswer: vi.fn() })
+
+    expect(runSelfCheck).toHaveBeenCalledWith('Your refund is ₹500.', [])
+  })
+})
+
+describe('extractToolResultsFromMessages', () => {
+  it('extracts only the output of tool parts in output-available state, across all messages', () => {
+    const messages: UIMessage[] = [
+      {
+        id: 'msg-1',
+        role: 'assistant',
+        parts: [
+          { type: 'text', text: 'Looking that up for you.' },
+          { type: 'tool-getOrder', state: 'output-available', toolCallId: 'call_1', input: { orderId: 'ORD-1' }, output: { orderId: 'ORD-1', status: 'shipped' } },
+          // no output yet -- must NOT be extracted
+          { type: 'tool-getTicket', state: 'input-available', toolCallId: 'call_2', input: { ticketId: 'TKT-1' } },
+        ],
+      } as UIMessage,
+      {
+        id: 'msg-2',
+        role: 'assistant',
+        parts: [
+          { type: 'dynamic-tool', toolName: 'approveCredit', state: 'output-available', toolCallId: 'call_3', input: {}, output: { creditInr: 240 } },
+        ],
+      } as UIMessage,
+    ]
+
+    const results = extractToolResultsFromMessages(messages)
+
+    expect(results).toEqual([{ orderId: 'ORD-1', status: 'shipped' }, { creditInr: 240 }])
+  })
+
+  it('returns an empty array when no message contains an output-available tool part', () => {
+    const messages: UIMessage[] = [
+      { id: 'msg-1', role: 'user', parts: [{ type: 'text', text: 'hello' }] } as UIMessage,
+    ]
+
+    expect(extractToolResultsFromMessages(messages)).toEqual([])
   })
 })

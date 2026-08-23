@@ -6,9 +6,11 @@ import { createReadOnlyTools } from '@/lib/agent/tools'
 import { createActionTools } from '@/lib/agent/actionTools'
 import { SYSTEM_PROMPT } from '@/lib/agent/systemPrompt'
 import { runSelfCheck } from '@/lib/agent/selfCheck'
-import { runSelfCheckStream } from '@/lib/agent/selfCheckStream'
+import { runSelfCheckStream, extractToolResultsFromMessages } from '@/lib/agent/selfCheckStream'
 
-export const maxDuration = 30
+// A turn can involve up to 8 tool-calling steps plus up to three additional model calls
+// (self-check, revise, re-check) — 30s was tight for that full chain in the worst case.
+export const maxDuration = 60
 
 const MODEL_ID = process.env.PARCELPILOT_MODEL_ID ?? 'gemini-3.5-flash-lite'
 
@@ -35,6 +37,12 @@ export async function POST(req: Request) {
     experimental_toolApprovalSecret: process.env.TOOL_APPROVAL_SECRET ?? 'parcelpilot-dev-secret-change-in-production',
   })
 
+  // I9: read-only lookups from earlier turns (getOrder, getTicket, etc.) live only in message
+  // history once a tool-approval resend means this turn's own chunk stream carries just the
+  // just-approved action tool's output. Extracted here, before/independent of
+  // convertToModelMessages, so the self-check pass isn't limited to this turn's thin evidence.
+  const priorToolResults = extractToolResultsFromMessages(messages)
+
   const stream = createUIMessageStream({
     execute: async ({ writer }) =>
       runSelfCheckStream({
@@ -43,6 +51,7 @@ export async function POST(req: Request) {
         // tool-output-denied, etc.) that the human-in-the-loop flow depends on unmodified.
         chunks: result.toUIMessageStream(),
         writer,
+        priorToolResults,
         runSelfCheck: (draftAnswer, toolResultsThisTurn) => runSelfCheck(draftAnswer, toolResultsThisTurn, google(MODEL_ID)),
         reviseAnswer: async (bufferedText, issues, toolResultsThisTurn) => {
           const { text } = await generateText({

@@ -33,7 +33,11 @@ vi.mock('@/lib/agent/systemPrompt', () => ({ SYSTEM_PROMPT: 'you are a support a
 vi.mock('@/lib/agent/selfCheck', () => ({ runSelfCheck: vi.fn() }))
 
 const runSelfCheckStreamMock = vi.fn()
-vi.mock('@/lib/agent/selfCheckStream', () => ({ runSelfCheckStream: (...args: unknown[]) => runSelfCheckStreamMock(...args) }))
+const extractToolResultsFromMessagesMock = vi.fn()
+vi.mock('@/lib/agent/selfCheckStream', () => ({
+  runSelfCheckStream: (...args: unknown[]) => runSelfCheckStreamMock(...args),
+  extractToolResultsFromMessages: (...args: unknown[]) => extractToolResultsFromMessagesMock(...args),
+}))
 
 import { getSessionIdentity } from '@/lib/identity/session'
 import { runSelfCheck } from '@/lib/agent/selfCheck'
@@ -51,6 +55,7 @@ const MINIMAL_VALID_MESSAGES = [{ id: 'msg-1', role: 'user', parts: [{ type: 'te
 describe('POST /api/chat', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    extractToolResultsFromMessagesMock.mockReturnValue([])
   })
 
   it('returns 401 and never touches the model when there is no session', async () => {
@@ -95,6 +100,26 @@ describe('POST /api/chat', () => {
     expect(call.writer).toBe(fakeWriter)
 
     expect(createUIMessageStreamResponseMock).toHaveBeenCalledWith({ stream: { execute } })
+  })
+
+  // I9: prior-turn tool results (extracted from the raw `messages` array) must reach
+  // `runSelfCheckStream` as `priorToolResults`, so the self-check pass has visibility into
+  // read-only lookups from earlier turns, not just this turn's chunk stream.
+  it('extracts prior-turn tool results from messages and passes them to runSelfCheckStream as priorToolResults', async () => {
+    vi.mocked(getSessionIdentity).mockResolvedValue({ surface: 'customer', accountId: 'ACCT-001' })
+    streamTextMock.mockReturnValue({ toUIMessageStream: () => (async function* () {})() })
+    createUIMessageStreamMock.mockImplementation(({ execute }: { execute: (o: { writer: unknown }) => Promise<void> }) => ({ execute }))
+    createUIMessageStreamResponseMock.mockReturnValue(new Response(null, { status: 200 }))
+    const priorResults = [{ orderId: 'ORD-1', status: 'shipped' }]
+    extractToolResultsFromMessagesMock.mockReturnValue(priorResults)
+
+    await POST(jsonRequest({ messages: MINIMAL_VALID_MESSAGES }))
+    const { execute } = createUIMessageStreamMock.mock.calls[0][0]
+    await execute({ writer: { write: vi.fn() } })
+
+    expect(extractToolResultsFromMessagesMock).toHaveBeenCalledWith(MINIMAL_VALID_MESSAGES)
+    expect(runSelfCheckStreamMock).toHaveBeenCalledTimes(1)
+    expect(runSelfCheckStreamMock.mock.calls[0][0].priorToolResults).toBe(priorResults)
   })
 
   it("the runSelfCheck delegate forwards to lib/agent/selfCheck's runSelfCheck with the configured model", async () => {

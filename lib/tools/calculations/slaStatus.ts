@@ -37,15 +37,19 @@ export function calculateSlaStatus(ticket: Ticket, account: Account, referenceNo
   const severity = classifySeverity(ticket)
   const rule = getContractRule(account.accountId)
   const overrideLabel = rule?.slaOverrides?.[severity]
-  const targetMinutes = overrideLabel ? OVERRIDE_LABEL_TO_MINUTES[overrideLabel] : DEFAULT_TARGETS_MIN[account.plan][severity]
+  // An unrecognized override label must fail closed (behave like "no override"), not silently
+  // produce `undefined`/NaN via a missing map entry — see M9. Only a label that actually
+  // resolves counts as "the contract override was used" for both the target and the citation.
+  const resolvedOverrideMinutes = overrideLabel ? OVERRIDE_LABEL_TO_MINUTES[overrideLabel] : undefined
+  const targetMinutes = resolvedOverrideMinutes ?? DEFAULT_TARGETS_MIN[account.plan][severity]
   const elapsedMinutes = Math.round((new Date(referenceNow).getTime() - new Date(ticket.createdAt).getTime()) / 60000)
 
   return {
     severity,
-    targetLabel: overrideLabel ?? `${targetMinutes}m (policy default)`,
+    targetLabel: resolvedOverrideMinutes != null ? overrideLabel! : `${targetMinutes}m (policy default)`,
     elapsedMinutes,
     targetMinutes,
     breached: elapsedMinutes > targetMinutes,
-    citation: rule?.sourceDoc ?? '01_Support_Policy_v3_CURRENT.pdf, Section 3',
+    citation: resolvedOverrideMinutes != null ? rule!.sourceDoc : '01_Support_Policy_v3_CURRENT.pdf, Section 3',
   }
 }

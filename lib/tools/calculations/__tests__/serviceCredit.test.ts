@@ -67,4 +67,44 @@ describe('calculateServiceCredit', () => {
     const result = calculateServiceCredit(order({ accountId: 'ACCT-001', shipmentFeeInr: 2400 }), NOW, 4900) // 4900 + 240 > 5000 cap
     expect(result.escalate).toBe('EXCEEDS_APPROVAL_LIMIT')
   })
+
+  // I5: citation must reflect whether the specific field used (threshold or amount) actually
+  // came from the contract, not merely whether a contract rule object exists for the account.
+  describe('citation accuracy (I5)', () => {
+    it('cites the SOP, not the contract, when Northstar (ACCT-001) falls through to the default threshold', () => {
+      // Northstar has a contract rule, but creditDelayThresholdHours is null -> SOP default (2h) applies.
+      // late by exactly 2h -> not eligible, and the "at or under threshold" branch fires.
+      const result = calculateServiceCredit(
+        order({ accountId: 'ACCT-001', pickupWindowEnd: '2026-08-16T09:00:00+05:30' }), NOW, 0,
+      )
+      expect(result.eligible).toBe(false)
+      expect(result.citation).toBe('03_Cancellation_and_Service_Credit_SOP_v4.pdf, Section 2')
+    })
+
+    it('cites the SOP, not the contract, when Northstar (ACCT-001) falls through to the default credit amount formula', () => {
+      // creditAmountInr is null for Northstar -> SOP min(500, 10%) formula applies.
+      const result = calculateServiceCredit(order({ accountId: 'ACCT-001', shipmentFeeInr: 2400 }), NOW, 0)
+      expect(result.eligible).toBe(true)
+      expect(result.creditInr).toBe(240)
+      expect(result.citation).toBe('03_Cancellation_and_Service_Credit_SOP_v4.pdf, Section 2')
+    })
+
+    it('cites the contract (regression) when LumenWorks (ACCT-002) has a non-null contract threshold', () => {
+      // late by exactly 4h under LumenWorks' 4h contract threshold -> not eligible, contract cited.
+      const result = calculateServiceCredit(
+        order({ accountId: 'ACCT-002', pickupWindowEnd: '2026-08-16T07:00:00+05:30' }), NOW, 0,
+      )
+      expect(result.eligible).toBe(false)
+      expect(result.citation).toBe('06_LumenWorks_Service_Agreement.pdf')
+    })
+
+    it('cites the contract (regression) when LumenWorks (ACCT-002) has a non-null fixed credit amount', () => {
+      const result = calculateServiceCredit(
+        order({ accountId: 'ACCT-002', pickupWindowEnd: '2026-08-16T06:58:00+05:30' }), NOW, 0,
+      )
+      expect(result.eligible).toBe(true)
+      expect(result.creditInr).toBe(300)
+      expect(result.citation).toBe('06_LumenWorks_Service_Agreement.pdf')
+    })
+  })
 })
