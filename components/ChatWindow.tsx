@@ -7,6 +7,15 @@ import { ReasoningChainPanel } from './ReasoningChainPanel'
 
 const TOOL_PART_PREFIX = 'tool-'
 
+// I7: design spec §5.4 confidence badge — colors chosen to read as a status pill consistent with
+// this file's existing amber approval-card / green-check tool-activity-row styling.
+const CONFIDENCE_BADGE_STYLES: Record<string, string> = {
+  High: 'border-green-300 bg-green-50 text-green-700',
+  'Resolved conflict': 'border-blue-300 bg-blue-50 text-blue-700',
+  Low: 'border-amber-300 bg-amber-50 text-amber-700',
+  Escalated: 'border-red-300 bg-red-50 text-red-700',
+}
+
 export function ChatWindow({ apiEndpoint }: { apiEndpoint: string }) {
   const [input, setInput] = useState('')
   // Construct our own `Chat` instance (memoized so it's stable across renders and
@@ -32,6 +41,18 @@ export function ChatWindow({ apiEndpoint }: { apiEndpoint: string }) {
             <div key={message.id} className={message.role === 'user' ? 'text-right' : ''}>
               {message.parts.map((part, i) => {
                 if (part.type === 'text') return <p key={i} className="inline-block rounded-lg bg-white px-3 py-2 shadow-sm">{part.text}</p>
+
+                // I7: design spec §5.4 confidence badge, written by runSelfCheckStream alongside
+                // (not instead of) the text for every direct answer, including escalated turns.
+                if (part.type === 'data-confidence') {
+                  const label = String((part.data as { label?: string } | undefined)?.label ?? '')
+                  const badgeStyle = CONFIDENCE_BADGE_STYLES[label] ?? 'border-gray-300 bg-gray-50 text-gray-700'
+                  return (
+                    <span key={i} className={`ml-2 inline-block rounded-full border px-2 py-0.5 text-xs font-medium ${badgeStyle}`}>
+                      {label}
+                    </span>
+                  )
+                }
 
                 if (!isToolUIPart(part)) return null
                 const toolName = part.type.replace(TOOL_PART_PREFIX, '')

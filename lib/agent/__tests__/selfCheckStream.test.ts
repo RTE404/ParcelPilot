@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { runSelfCheckStream, extractToolResultsFromMessages, SELF_CHECK_ESCALATION_MESSAGE } from '../selfCheckStream'
+import { runSelfCheckStream, extractToolResultsFromMessages, classifyConfidence, SELF_CHECK_ESCALATION_MESSAGE } from '../selfCheckStream'
 import type { UIMessageChunk, UIMessage } from 'ai'
 import type { SelfCheckResult } from '../selfCheck'
 
@@ -78,11 +78,13 @@ describe('runSelfCheckStream', () => {
     // through only after the final text, so the wire order is always
     // non-text/non-finish chunks, then text, then finish — protocol-conformant regardless of
     // client leniency around a `finish` chunk arriving before the message's text.
+    // I7: a not-checked answer with no override-citation signal gets a 'High' confidence badge.
     expect(written).toEqual([
       { type: 'start' },
       { type: 'text-start', id: 'txt_1' },
       { type: 'text-delta', id: 'txt_1', delta: 'Your package is on its way, no issues found.' },
       { type: 'text-end', id: 'txt_1' },
+      { type: 'data-confidence', id: 'txt_1-confidence', data: { label: 'High' } },
       { type: 'finish' },
     ])
   })
@@ -99,6 +101,8 @@ describe('runSelfCheckStream', () => {
     expect(runSelfCheck).toHaveBeenCalledWith('Your refund is ₹500.', [])
     expect(reviseAnswer).not.toHaveBeenCalled()
     expect(written.filter(c => c.type === 'text-delta')).toEqual([{ type: 'text-delta', id: 'txt_1', delta: 'Your refund is ₹500.' }])
+    // I7: a first-try-pass answer with no tool results at all gets a 'High' confidence badge.
+    expect(written).toContainEqual({ type: 'data-confidence', id: 'txt_1-confidence', data: { label: 'High' } })
   })
 
   it('a turn that calls an action tool runs self-check even with no digits in the text', async () => {
@@ -142,6 +146,9 @@ describe('runSelfCheckStream', () => {
     // second check runs against the revised text
     expect(runSelfCheck).toHaveBeenNthCalledWith(2, 'Your credit is ₹240.', [{ creditInr: 240 }])
     expect(written.filter(c => c.type === 'text-delta')).toEqual([{ type: 'text-delta', id: 'txt_1', delta: 'Your credit is ₹240.' }])
+    // I7: a revised (one-retry) answer gets a 'Low' confidence badge — the tool result here has
+    // no citation/escalate field, so only the 'revised' outcome drives the label.
+    expect(written).toContainEqual({ type: 'data-confidence', id: 'txt_1-confidence', data: { label: 'Low' } })
   })
 
   it('(d) a turn that fails self-check twice emits the fixed escalation message', async () => {
@@ -165,10 +172,12 @@ describe('runSelfCheckStream', () => {
     // M1: `finish` must be deferred until after the escalation text in this branch too — not
     // just the happy path (test (b)) — otherwise a future edit could silently regress
     // protocol-conformance in exactly the branch a hasty fix would forget to check.
+    // I7: an escalated turn still gets a confidence badge — 'Escalated', not omitted.
     expect(written).toEqual([
       { type: 'text-start', id: 'txt_1' },
       { type: 'text-delta', id: 'txt_1', delta: SELF_CHECK_ESCALATION_MESSAGE },
       { type: 'text-end', id: 'txt_1' },
+      { type: 'data-confidence', id: 'txt_1-confidence', data: { label: 'Escalated' } },
       { type: 'finish' },
     ])
   })
@@ -247,6 +256,36 @@ describe('runSelfCheckStream', () => {
     await runSelfCheckStream({ chunks: streamOf(chunks), writer, runSelfCheck, reviseAnswer: vi.fn() })
 
     expect(runSelfCheck).toHaveBeenCalledWith('Your refund is ₹500.', [])
+  })
+})
+
+describe('classifyConfidence', () => {
+  it('(I7) returns Escalated when any tool result carries a truthy escalate field, even on a passed outcome', () => {
+    expect(classifyConfidence('passed', [{ creditInr: 5000, escalate: 'EXCEEDS_APPROVAL_LIMIT' }])).toBe('Escalated')
+  })
+
+  it('(I7) returns Escalated when the self-check outcome itself escalated, even with no escalate-flagged tool result', () => {
+    expect(classifyConfidence('escalated', [{ creditInr: 240, citation: '03_Cancellation_and_Service_Credit_SOP_v4.pdf, Section 2' }])).toBe('Escalated')
+  })
+
+  it('(I7) returns Resolved conflict for a contract-specific citation with no escalate flag on a first-try-pass outcome', () => {
+    expect(classifyConfidence('passed', [{ creditInr: 800, citation: '05_Northstar_Logistics_Enterprise_Agreement.pdf' }])).toBe('Resolved conflict')
+  })
+
+  it('(I7) returns Low for a plain default-SOP citation with a revised outcome', () => {
+    expect(classifyConfidence('revised', [{ creditInr: 240, citation: '03_Cancellation_and_Service_Credit_SOP_v4.pdf, Section 2' }])).toBe('Low')
+  })
+
+  it('(I7) returns High for a plain default-SOP citation with a passed outcome', () => {
+    expect(classifyConfidence('passed', [{ creditInr: 240, citation: '03_Cancellation_and_Service_Credit_SOP_v4.pdf, Section 2' }])).toBe('High')
+  })
+
+  it('(I7) returns High for a plain default-policy citation with a not-checked outcome', () => {
+    expect(classifyConfidence('not-checked', [{ severity: 'P2', citation: '01_Support_Policy_v3_CURRENT.pdf, Section 3' }])).toBe('High')
+  })
+
+  it('(I7) ignores non-plain-object tool results and results without a citation/escalate field', () => {
+    expect(classifyConfidence('passed', [null, 'raw string', 42, [1, 2], { orderId: 'ORD-1' }])).toBe('High')
   })
 })
 
