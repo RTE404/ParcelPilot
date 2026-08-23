@@ -1,7 +1,8 @@
 # Submission Notes — ParcelPilot Support Agent
 
-The three short write-ups the assessment asks for, alongside the repo and (once deployed) the
-hosted link. Fuller technical detail lives in [`docs/HLD.md`](HLD.md), [`docs/LLD.md`](LLD.md),
+The three short write-ups the assessment asks for, alongside the repo and the hosted link
+(https://parcelpilot-agent-eight.vercel.app). Fuller technical detail lives in
+[`docs/HLD.md`](HLD.md), [`docs/LLD.md`](LLD.md),
 and the [design spec](superpowers/specs/2026-08-22-parcelpilot-agent-design.md) — this note
 summarizes rather than repeats them.
 
@@ -95,9 +96,7 @@ larger deployment would likely want finer-grained read scoping per team; (4) a r
 on the self-check pass's false-escalation rate (see the metric below) to actually tune its
 strictness with data instead of guesswork.
 
-**What I intentionally left out.** Actual deployment (requires the grader's/my own Vercel
-credentials — the app is deploy-ready but I didn't push a live instance without explicit
-authorization to act on external infrastructure). True database persistence, as above. A
+**What I intentionally left out.** True database persistence, as above. A
 production-grade session/auth system — mocked auth is explicitly permitted by the assessment
 and building real auth would be off-topic effort. Full internal role-based read scoping (see
 above — deliberately deferred, not missed). Fine-tuning or prompt-optimizing the self-check
