@@ -24,3 +24,9 @@ Observability Module/
 
 .vercel
 .env*
+
+# CalQuity's internal assessment brief (compensation figures) and this repo's own
+# annotated walkthrough of the assessment's deliberate traps — kept local only,
+# not for a public repo.
+CalQuity AI Engineer — Job Description & AI Agent Assessment.md
+ParcelPilot_Assignment_Explained.md
